@@ -117,8 +117,11 @@ CBox CShape::getBoundingBoxWl() const {
 }
 
 void CShape::onClick(uint32_t button, bool down, const Vector2D& pos) {
-    if (down && !onclickCommand.empty())
+    if (down && !onclickCommand.empty()) {
+        if (handleInternalCommand(onclickCommand))
+            return;
         spawnAsync(onclickCommand);
+    }
 }
 
 void CShape::onHover(const Vector2D& pos) {

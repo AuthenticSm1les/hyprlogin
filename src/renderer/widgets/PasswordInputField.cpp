@@ -9,6 +9,7 @@
 #include "../../core/AnimationManager.hpp"
 #include "../../helpers/Color.hpp"
 #include <cmath>
+#include <fstream>
 #include <hyprgraphics/resource/resources/TextResource.hpp>
 #include <hyprutils/math/Vector2D.hpp>
 #include <hyprutils/string/String.hpp>
@@ -16,6 +17,33 @@
 #include <hyprlang.hpp>
 
 using namespace Hyprutils::String;
+
+static bool passwordFieldDebugMode() {
+    static const auto DEBUGMODE = g_pConfigManager->getValue<Hyprlang::INT>("general:debug_mode");
+    return *DEBUGMODE != 0;
+}
+
+static std::string passwordFieldDebugLogPath() {
+    static const auto DEBUGLOGPATH = g_pConfigManager->getValue<Hyprlang::STRING>("general:debug_log_path");
+    return std::string{std::string_view{*DEBUGLOGPATH}};
+}
+
+static void logPasswordFieldDebug(const std::string& message) {
+    if (!passwordFieldDebugMode())
+        return;
+
+    Log::logger->log(Log::INFO, "[input-debug] {}", message);
+
+    const auto path = passwordFieldDebugLogPath();
+    if (path.empty())
+        return;
+
+    std::ofstream out(path, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << "[input-debug] " << message << '\n';
+}
 
 CPasswordInputField::~CPasswordInputField() {
     reset();
@@ -49,6 +77,7 @@ void CPasswordInputField::configure(const std::unordered_map<std::string, std::a
         hiddenInputState.enabled = std::any_cast<Hyprlang::INT>(props.at("hide_input"));
         rounding                 = std::any_cast<Hyprlang::INT>(props.at("rounding"));
         configPlaceholderText    = std::any_cast<Hyprlang::STRING>(props.at("placeholder_text"));
+        configUsernamePlaceholderText = std::any_cast<Hyprlang::STRING>(props.at("placeholder_text_username"));
         configFailText           = std::any_cast<Hyprlang::STRING>(props.at("fail_text"));
         configCheckText          = std::any_cast<Hyprlang::STRING>(props.at("check_text"));
         fontFamily               = std::any_cast<Hyprlang::STRING>(props.at("font_family"));
@@ -116,6 +145,13 @@ void CPasswordInputField::reset() {
     placeholder.asset      = nullptr;
     placeholder.resourceID = 0;
     placeholder.currentText.clear();
+
+    if (inputText.asset)
+        g_asyncResourceManager->unload(inputText.asset);
+
+    inputText.asset      = nullptr;
+    inputText.resourceID = 0;
+    inputText.currentText.clear();
 }
 
 static void fadeOutCallback(AWP<CPasswordInputField> ref) {
@@ -183,13 +219,29 @@ bool CPasswordInputField::draw(const SRenderData& data) {
     bool forceReload = false;
 
     passwordLength = g_pHyprlock->getPasswordBufferDisplayLen();
+    inputHidden    = g_pHyprlock->isInputBufferHidden();
     checkWaiting   = g_pAuth->checkWaiting();
     displayFail    = g_pAuth->m_bDisplayFailText;
+
+    const auto currentPrompt         = g_pHyprlock->getGreeterPrompt();
+    const auto currentTargetUsername = g_pHyprlock->getTargetUsername();
+    if (checkWaiting != lastLoggedCheckWaiting || displayFail != lastLoggedDisplayFail || inputHidden != lastLoggedInputHidden ||
+        passwordLength != lastLoggedPasswordLength || currentPrompt != lastLoggedPrompt || currentTargetUsername != lastLoggedTargetUsername) {
+        logPasswordFieldDebug(std::format("draw state: waiting={} display_fail={} input_hidden={} password_length={} prompt='{}' target_user='{}'", checkWaiting,
+                                          displayFail, inputHidden, passwordLength, currentPrompt, currentTargetUsername));
+        lastLoggedCheckWaiting   = checkWaiting;
+        lastLoggedDisplayFail    = displayFail;
+        lastLoggedInputHidden    = inputHidden;
+        lastLoggedPasswordLength = passwordLength;
+        lastLoggedPrompt         = currentPrompt;
+        lastLoggedTargetUsername = currentTargetUsername;
+    }
 
     updateFade();
     updateDots();
     updateColors();
     updatePlaceholder();
+    updateInputState();
     updateWidth();
     updateHiddenInputState();
 
@@ -234,7 +286,7 @@ bool CPasswordInputField::draw(const SRenderData& data) {
     const int ROUND = roundingForBox(inputFieldBox, rounding);
     g_pRenderer->renderRect(inputFieldBox, innerCol, ROUND);
 
-    if (!hiddenInputState.enabled) {
+    if (!hiddenInputState.enabled && inputHidden) {
         const int RECTPASSSIZE = std::nearbyint(inputFieldBox.h * dots.size * 0.5f) * 2.f;
         Vector2D  passSize{RECTPASSSIZE, RECTPASSSIZE};
         int       passSpacing = std::floor(passSize.x * dots.spacing);
@@ -324,6 +376,23 @@ bool CPasswordInputField::draw(const SRenderData& data) {
             forceReload = true;
     }
 
+    const bool drawVisibleInput = !inputHidden && passwordLength != 0 && inputText.resourceID > 0;
+    if (drawVisibleInput) {
+        if (!inputText.asset)
+            inputText.asset = g_asyncResourceManager->getAssetByID(inputText.resourceID);
+
+        if (inputText.asset) {
+            const Vector2D assetPos = inputFieldBox.pos() + inputFieldBox.size() / 2.0 - inputText.asset->m_vSize / 2.0;
+            const CBox     assetBox{assetPos, inputText.asset->m_vSize};
+            glEnable(GL_SCISSOR_TEST);
+            glScissor(inputFieldBox.x, inputFieldBox.y, inputFieldBox.w, inputFieldBox.h);
+            g_pRenderer->renderTexture(assetBox, *inputText.asset, data.opacity * fade.a->value(), 0);
+            glScissor(0, 0, viewport.x, viewport.y);
+            glDisable(GL_SCISSOR_TEST);
+        } else
+            forceReload = true;
+    }
+
     return redrawShadow || forceReload;
 }
 
@@ -343,7 +412,7 @@ void CPasswordInputField::updatePlaceholder() {
     if (displayFail && placeholder.failedAttempts == g_pAuth->getFailedAttempts())
         return;
 
-    std::string& templateText = configPlaceholderText;
+    std::string& templateText = inputHidden ? configPlaceholderText : configUsernamePlaceholderText;
 
     if (displayFail) {
         templateText               = configFailText;
@@ -353,6 +422,8 @@ void CPasswordInputField::updatePlaceholder() {
     }
 
     const std::string newText = formatString(templateText).formatted;
+    logPasswordFieldDebug(std::format("updatePlaceholder: display_fail={} waiting={} input_hidden={} template='{}' rendered='{}'", displayFail, checkWaiting, inputHidden,
+                                      templateText, newText));
 
     // if the text is unchanged we don't need to do anything, unless we are swapping font color
     const auto ALLOWCOLORSWAP = outThick == 0 && colorConfig.swapFont;
@@ -378,11 +449,43 @@ void CPasswordInputField::onAssetUpdate(ResourceID id, ASP<CTexture> newAsset) {
     ;
 }
 
+void CPasswordInputField::updateInputState() {
+    const auto currentInput = g_pHyprlock->getInputBuffer();
+
+    if (inputHidden || currentInput.empty()) {
+        if (inputText.asset) {
+            g_asyncResourceManager->unload(inputText.asset);
+            inputText.asset = nullptr;
+        }
+
+        inputText.currentText.clear();
+        inputText.resourceID = 0;
+        return;
+    }
+
+    if (currentInput == inputText.currentText)
+        return;
+
+    inputText.currentText = currentInput;
+    inputText.asset       = nullptr;
+
+    Hyprgraphics::CTextResource::STextResourceData request;
+    request.text     = currentInput;
+    request.font     = fontFamily;
+    request.color    = colorState.font.asRGB();
+    request.fontSize = (int)size->value().y / 4;
+
+    AWP<IWidget> widget(m_self);
+    inputText.resourceID = g_asyncResourceManager->requestText(request, widget);
+}
+
 void CPasswordInputField::updateWidth() {
     double targetSizeX = configSize.x;
 
     if (passwordLength == 0 && placeholder.asset)
         targetSizeX = placeholder.asset->m_vSize.x + size->goal().y;
+    else if (!inputHidden && inputText.asset)
+        targetSizeX = std::max(targetSizeX, inputText.asset->m_vSize.x + size->goal().y);
 
     targetSizeX = std::max(targetSizeX, configSize.x);
 

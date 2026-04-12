@@ -599,17 +599,30 @@ void CRenderer::reconfigureWidgetsFor(OUTPUTID id) {
 }
 
 void CRenderer::startFadeIn() {
-    Log::logger->log(Log::INFO, "Starting fade in");
+    Log::logger->log(Log::INFO, "startFadeIn: setting opacity to 1");
     *opacity = 1.f;
 
     opacity->setCallbackOnEnd([this](auto) { opacity->setConfig(g_pConfigManager->m_AnimationTree.getConfig("fadeOut")); }, true);
 }
 
 void CRenderer::startFadeOut(bool unlock) {
+    Log::logger->log(Log::INFO, "startFadeOut: setting opacity to 0");
     *opacity = 0.f;
 
-    if (unlock)
-        opacity->setCallbackOnEnd([](auto) { g_pHyprlock->releaseSessionLock(); }, true);
+    if (unlock) {
+        Log::logger->log(Log::INFO, "startFadeOut: setting releaseSessionLock callback on fade end");
+        opacity->setCallbackOnEnd([](auto) {
+            try {
+                Log::logger->log(Log::INFO, "fadeOut callback: calling releaseSessionLock");
+                g_pHyprlock->releaseSessionLock();
+                Log::logger->log(Log::INFO, "fadeOut callback: returned from releaseSessionLock");
+            } catch (const std::exception& e) {
+                Log::logger->log(Log::ERR, "fadeOut callback: exception caught: {}", e.what());
+            } catch (...) {
+                Log::logger->log(Log::ERR, "fadeOut callback: unknown exception caught");
+            }
+        }, true);
+    }
 }
 
 void CRenderer::warpOpacity(float newOpacity) {

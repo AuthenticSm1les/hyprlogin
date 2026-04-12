@@ -238,8 +238,11 @@ CBox CImage::getBoundingBoxWl() const {
 }
 
 void CImage::onClick(uint32_t button, bool down, const Vector2D& pos) {
-    if (down && !onclickCommand.empty())
+    if (down && !onclickCommand.empty()) {
+        if (handleInternalCommand(onclickCommand))
+            return;
         spawnAsync(onclickCommand);
+    }
 }
 
 void CImage::onHover(const Vector2D& pos) {

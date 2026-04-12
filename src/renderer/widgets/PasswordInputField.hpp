@@ -47,8 +47,15 @@ class CPasswordInputField : public IWidget {
     bool                     redrawShadow = false;
     bool                     checkWaiting = false;
     bool                     displayFail  = false;
+    bool                     lastLoggedCheckWaiting = false;
+    bool                     lastLoggedDisplayFail  = false;
 
     size_t                   passwordLength = 0;
+    size_t                   lastLoggedPasswordLength = 0;
+    bool                     inputHidden    = true;
+    bool                     lastLoggedInputHidden    = true;
+    std::string              lastLoggedPrompt         = "";
+    std::string              lastLoggedTargetUsername = "";
 
     PHLANIMVAR<Vector2D>     size;
     Vector2D                 pos;
@@ -56,7 +63,7 @@ class CPasswordInputField : public IWidget {
     Vector2D                 configPos;
     Vector2D                 configSize;
 
-    std::string              halign, valign, configFailText, configCheckText, outputStringPort, configPlaceholderText, fontFamily;
+    std::string              halign, valign, configFailText, configCheckText, outputStringPort, configPlaceholderText, configUsernamePlaceholderText, fontFamily;
     uint64_t                 configFailTimeoutMs = 2000;
 
     int                      outThick, rounding;
@@ -86,6 +93,12 @@ class CPasswordInputField : public IWidget {
         std::string   currentText    = "";
         size_t        failedAttempts = 0;
     } placeholder;
+
+    struct {
+        size_t        resourceID  = 0;
+        ASP<CTexture> asset       = nullptr;
+        std::string   currentText = "";
+    } inputText;
 
     struct {
         CHyprColor lastColor;

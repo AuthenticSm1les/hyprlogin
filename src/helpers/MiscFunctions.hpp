@@ -10,3 +10,5 @@ int         createPoolFile(size_t size, std::string& name);
 std::string spawnSync(const std::string& cmd);
 void        spawnAsync(const std::string& cmd);
 std::string getUsernameForCurrentUid();
+bool        isExecutableCommand(const std::string& exec);
+bool        handleInternalCommand(const std::string& cmd);

@@ -1,8 +1,10 @@
 #include "MiscFunctions.hpp"
 #include "Log.hpp"
+#include "../core/hyprlock.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <fcntl.h>
 #include <filesystem>
 #include <hyprutils/os/Process.hpp>
@@ -113,7 +115,7 @@ int createPoolFile(size_t size, std::string& name) {
         return -1;
     }
 
-    name = std::string(XDGRUNTIMEDIR) + "/.hyprlock_sc_XXXXXX";
+    name = std::string(XDGRUNTIMEDIR) + "/.hyprlogin_sc_XXXXXX";
 
     const auto FD = mkstemp((char*)name.c_str());
     if (FD < 0) {
@@ -170,4 +172,70 @@ std::string getUsernameForCurrentUid() {
     }
 
     return std::string{uidPassword->pw_name};
+}
+
+bool isExecutableCommand(const std::string& exec) {
+    if (exec.empty())
+        return false;
+
+    auto firstToken = exec.substr(0, exec.find_first_of(" \t"));
+    if (firstToken.empty())
+        return false;
+
+    while (firstToken.contains("=") && exec.find_first_of(" \t") != std::string::npos) {
+        const auto nextPos = exec.find_first_not_of(" \t", exec.find_first_of(" \t"));
+        if (nextPos == std::string::npos)
+            return false;
+
+        const auto rest = exec.substr(nextPos);
+        firstToken      = rest.substr(0, rest.find_first_of(" \t"));
+        if (!firstToken.contains("="))
+            break;
+    }
+
+    if (firstToken.starts_with('/'))
+        return access(firstToken.c_str(), R_OK | X_OK) == 0;
+
+    const auto* pathEnv = getenv("PATH");
+    if (!pathEnv)
+        return false;
+
+    std::string paths = pathEnv;
+    size_t      start = 0;
+    while (start <= paths.size()) {
+        const auto end   = paths.find(':', start);
+        const auto entry = paths.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (!entry.empty()) {
+            const auto candidate = std::filesystem::path(entry) / firstToken;
+            if (std::filesystem::exists(candidate) && access(candidate.c_str(), R_OK | X_OK) == 0)
+                return true;
+        }
+
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+
+    return false;
+}
+
+bool handleInternalCommand(const std::string& cmd) {
+    if (cmd == "hyprlogin:session_next") {
+        g_pHyprlock->cycleSession(1);
+        g_pHyprlock->renderAllOutputs();
+        return true;
+    }
+
+    if (cmd == "hyprlogin:session_prev") {
+        g_pHyprlock->cycleSession(-1);
+        g_pHyprlock->renderAllOutputs();
+        return true;
+    }
+
+    if (cmd == "hyprlogin:clear_input") {
+        g_pHyprlock->clearPasswordBuffer();
+        return true;
+    }
+
+    return false;
 }

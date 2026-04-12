@@ -5,24 +5,30 @@
 #include "core/AnimationManager.hpp"
 
 #include <string_view>
+#include <csignal>
 
 #include <hyprutils/cli/ArgumentParser.hpp>
 
 static void printVersion() {
-    constexpr bool ISTAGGEDRELEASE = std::string_view(HYPRLOCK_COMMIT) == HYPRLOCK_VERSION_COMMIT;
+    constexpr bool ISTAGGEDRELEASE = std::string_view(HYPRLOGIN_COMMIT) == HYPRLOGIN_VERSION_COMMIT;
     if (ISTAGGEDRELEASE)
-        std::println("Hyprlock version v{}", HYPRLOCK_VERSION);
+        std::println("Hyprlogin version v{}", HYPRLOGIN_VERSION);
     else
-        std::println("Hyprlock version v{} (commit {})", HYPRLOCK_VERSION, HYPRLOCK_COMMIT);
+        std::println("Hyprlogin version v{} (commit {})", HYPRLOGIN_VERSION, HYPRLOGIN_COMMIT);
 }
 
 int main(int argc, char** argv, char** envp) {
+    // Ignore SIGPIPE so socket writes to closed connections return EPIPE
+    // instead of killing the process. This is critical for the greetd
+    // backend when cancel_session hits a connection that greetd closed.
+    std::signal(SIGPIPE, SIG_IGN);
+
     std::vector<const char*>        args(argv, argv + argc);
 
     Hyprutils::CLI::CArgumentParser argParser(args);
 
     ASSERT(argParser.registerBoolOption("help", "h", "Show this help message").has_value());
-    ASSERT(argParser.registerBoolOption("version", "V", "Print hyprlock version, then exit").has_value());
+    ASSERT(argParser.registerBoolOption("version", "V", "Print hyprlogin version, then exit").has_value());
     ASSERT(argParser.registerBoolOption("verbose", "v", "Enable verbose logging").has_value());
     ASSERT(argParser.registerBoolOption("quiet", "q", "Disable logging").has_value());
     ASSERT(argParser.registerStringOption("config", "c", "Specify config file to use").has_value());
@@ -40,7 +46,7 @@ int main(int argc, char** argv, char** envp) {
     }
 
     if (argParser.getBool("help")) {
-        std::print("{}", argParser.getDescription("Hyprlock CLI Arguments", 87));
+        std::print("{}", argParser.getDescription("Hyprlogin CLI Arguments", 87));
         return 0;
     }
 
@@ -84,6 +90,12 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
+    static const auto DEBUGMODE = g_pConfigManager->getValue<Hyprlang::INT>("general:debug_mode");
+    if (*DEBUGMODE && !Log::logger->verbose()) {
+        Log::logger->setVerbose();
+        Log::logger->log(Log::INFO, "general:debug_mode enabled");
+    }
+
     if (noFadeIn)
         g_pConfigManager->m_AnimationTree.setConfigForNode("fadeIn", false, 0.f, "default");
 
@@ -91,7 +103,7 @@ int main(int argc, char** argv, char** envp) {
         g_pHyprlock = makeUnique<CHyprlock>(argParser.getString("display").value_or(""), immediateRender, graceSeconds);
         g_pHyprlock->run();
     } catch (const std::exception& ex) {
-        Log::logger->log(Log::CRIT, "Hyprlock threw: {}", ex.what());
+        Log::logger->log(Log::CRIT, "Hyprlogin threw: {}", ex.what());
         return 1;
     }
 

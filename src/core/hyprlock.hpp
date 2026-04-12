@@ -25,6 +25,14 @@ struct SDMABUFModifier {
     uint64_t mod    = 0;
 };
 
+struct SGreeterSession {
+    std::string name;
+    std::string command;
+    std::string type;
+    std::string desktopNames;
+    std::string desktopFile;
+};
+
 class CHyprlock {
   public:
     CHyprlock(std::string_view wlDisplay, const bool immediateRender, const int gracePeriod);
@@ -56,6 +64,22 @@ class CHyprlock {
     void                       clearPasswordBuffer();
     bool                       passwordCheckWaiting();
     std::optional<std::string> passwordLastFailReason();
+    const std::string&         getInputBuffer();
+    void                       setInputBuffer(const std::string& input);
+    bool                       isInputBufferHidden();
+    void                       setGreeterPrompt(const std::string& prompt, bool secretInput);
+    const std::string&         getGreeterPrompt();
+    void                       setTargetUsername(const std::string& username);
+    void                       clearTargetUsername();
+    const std::string&         getTargetUsername();
+    // Batch-update all greeter UI state atomically, then render once.
+    // Prevents partial renders where the prompt shows stale "Validating..."
+    // while the username has already changed.
+    void                       setGreeterUIState(const std::string& prompt, bool secretInput, std::string_view username);
+    void                       cycleSession(int delta);
+    std::string                getSelectedSessionName();
+    std::string                getSelectedSessionCommand();
+    std::vector<std::string>   getSelectedSessionEnv();
 
     void                       renderOutput(const std::string& stringPort);
     void                       renderAllOutputs();
@@ -85,6 +109,7 @@ class CHyprlock {
     bool                             m_bCapsLock = false;
     bool                             m_bNumLock  = false;
     bool                             m_bCtrl     = false;
+    bool                             m_bShift    = false;
 
     bool                             m_bImmediateRender = false;
 
@@ -143,6 +168,14 @@ class CHyprlock {
     } m_sPasswordState;
 
     struct {
+        std::string                 prompt               = "Username";
+        bool                        secretInput          = false;
+        std::string                 targetUsername       = "";
+        std::vector<SGreeterSession> sessions            = {};
+        size_t                      selectedSessionIndex = 0;
+    } m_sGreeterState;
+
+    struct {
         std::mutex              timersMutex;
         std::mutex              eventRequestMutex;
         std::mutex              eventLoopMutex;
@@ -160,6 +193,8 @@ class CHyprlock {
     std::vector<ASP<CTimer>> m_vTimers;
 
     std::vector<uint32_t>    m_vPressedKeys;
+
+    void                     loadSessions();
 };
 
 inline UP<CHyprlock> g_pHyprlock;

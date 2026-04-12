@@ -2,6 +2,9 @@
 .direnv
 .envrc
 .vscode/
+.makepkg-build/
+.makepkg-staged-src/
+pkg/
 CMakeCache.txt
 CMakeFiles/
 Makefile
@@ -12,3 +15,5 @@ protocols/*.cpp
 protocols/*.hpp
 *.kdev4
 .gdb_history
+*.pkg.tar.*
+*.log

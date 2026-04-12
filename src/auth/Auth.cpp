@@ -1,6 +1,7 @@
 #include "Auth.hpp"
 #include "Pam.hpp"
 #include "Fingerprint.hpp"
+#include "Greetd.hpp"
 #include "../config/ConfigManager.hpp"
 #include "../core/hyprlock.hpp"
 #include "src/helpers/Log.hpp"
@@ -9,6 +10,10 @@
 #include <memory>
 
 CAuth::CAuth() {
+    static const auto ENABLEGREETD = g_pConfigManager->getValue<Hyprlang::INT>("auth:greetd:enabled");
+    if (*ENABLEGREETD)
+        m_vImpls.emplace_back(makeShared<CGreetd>());
+
     static const auto ENABLEPAM = g_pConfigManager->getValue<Hyprlang::INT>("auth:pam:enabled");
     if (*ENABLEPAM)
         m_vImpls.emplace_back(makeShared<CPam>());
@@ -77,7 +82,15 @@ void CAuth::terminate() {
 }
 
 static void unlockCallback(ASP<CTimer> self, void* data) {
-    g_pHyprlock->unlock();
+    try {
+        Log::logger->log(Log::INFO, "unlockCallback: calling g_pHyprlock->unlock()");
+        g_pHyprlock->unlock();
+        Log::logger->log(Log::INFO, "unlockCallback: returned from unlock()");
+    } catch (const std::exception& e) {
+        Log::logger->log(Log::ERR, "unlockCallback: exception caught: {}", e.what());
+    } catch (...) {
+        Log::logger->log(Log::ERR, "unlockCallback: unknown exception caught");
+    }
 }
 
 void CAuth::enqueueUnlock() {

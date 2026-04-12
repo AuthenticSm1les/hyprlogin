@@ -4,19 +4,19 @@ file(READ "${CMAKE_SOURCE_DIR}/VERSION" VER_RAW)
 string(STRIP ${VER_RAW} VERSION)
 
 project(
-  hyprlock
-  DESCRIPTION "A gpu-accelerated screen lock for Hyprland"
+  hyprlogin
+  DESCRIPTION "A gpu-accelerated greetd greeter for Hyprland"
   VERSION ${VERSION})
 
 set(CMAKE_MESSAGE_LOG_LEVEL "STATUS")
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
-  message(STATUS "Configuring hyprlock in Debug with CMake")
+  message(STATUS "Configuring hyprlogin in Debug with CMake")
   add_compile_definitions(HYPRLAND_DEBUG)
 else()
   add_compile_options(-O3)
-  message(STATUS "Configuring hyprlock in Release with CMake")
+  message(STATUS "Configuring hyprlogin in Release with CMake")
 endif()
 
 include_directories(. "protocols/")
@@ -31,36 +31,61 @@ add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-unused-value
 
 
 
-add_compile_definitions(HYPRLOCK_VERSION="${VERSION}")
+add_compile_definitions(HYPRLOGIN_VERSION="${VERSION}")
+add_compile_definitions(HYPRLOGIN_SYSTEM_CONFIG="/etc/hyprlogin/hyprlogin.conf")
+add_compile_definitions(HYPRLOGIN_EXAMPLE_CONFIG="${CMAKE_INSTALL_FULL_DATAROOTDIR}/hyprlogin/examples/hyprlogin.conf")
 
-if (DEFINED HYPRLOCK_COMMIT)
-  add_compile_definitions(HYPRLOCK_COMMIT="${HYPRLOCK_COMMIT}")
-else()
-  # get git commit
+find_package(Git QUIET)
+
+if (DEFINED HYPRLOGIN_COMMIT)
+  set(HYPRLOGIN_COMMIT_VALUE "${HYPRLOGIN_COMMIT}")
+  add_compile_definitions(HYPRLOGIN_COMMIT="${HYPRLOGIN_COMMIT}")
+elseif(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  # Only probe git metadata when building from a real repository checkout.
   execute_process(
     OUTPUT_VARIABLE GIT_SHORT_HASH
     OUTPUT_STRIP_TRAILING_WHITESPACE
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMAND git rev-parse --short HEAD
+    COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+    RESULT_VARIABLE GIT_SHORT_HASH_RESULT
+    ERROR_QUIET
   )
-  add_compile_definitions(HYPRLOCK_COMMIT="${GIT_SHORT_HASH}")
+  if(GIT_SHORT_HASH_RESULT EQUAL 0 AND NOT GIT_SHORT_HASH STREQUAL "")
+    set(HYPRLOGIN_COMMIT_VALUE "${GIT_SHORT_HASH}")
+  else()
+    set(HYPRLOGIN_COMMIT_VALUE "unknown")
+  endif()
+  add_compile_definitions(HYPRLOGIN_COMMIT="${HYPRLOGIN_COMMIT_VALUE}")
+else()
+  set(HYPRLOGIN_COMMIT_VALUE "unknown")
+  add_compile_definitions(HYPRLOGIN_COMMIT="${HYPRLOGIN_COMMIT_VALUE}")
 endif()
 
-if (DEFINED HYPRLOCK_VERSION_COMMIT)
-  add_compile_definitions(HYPRLOCK_VERSION_COMMIT="${HYPRLOCK_VERSION_COMMIT}")
-else()
-  # get git commit of v$VERSION
+if (DEFINED HYPRLOGIN_VERSION_COMMIT)
+  set(HYPRLOGIN_VERSION_COMMIT_VALUE "${HYPRLOGIN_VERSION_COMMIT}")
+elseif(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  # Prefer the tagged release commit when the repository metadata is available.
   execute_process(
     OUTPUT_VARIABLE GIT_TAG_SHORT_HASH
     OUTPUT_STRIP_TRAILING_WHITESPACE
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMAND git rev-parse --short v${VERSION}
+    COMMAND "${GIT_EXECUTABLE}" rev-parse --short v${VERSION}
+    RESULT_VARIABLE GIT_TAG_SHORT_HASH_RESULT
+    ERROR_QUIET
   )
-  add_compile_definitions(HYPRLOCK_VERSION_COMMIT="${GIT_TAG_SHORT_HASH}")
+  if(GIT_TAG_SHORT_HASH_RESULT EQUAL 0 AND NOT GIT_TAG_SHORT_HASH STREQUAL "")
+    set(HYPRLOGIN_VERSION_COMMIT_VALUE "${GIT_TAG_SHORT_HASH}")
+  else()
+    set(HYPRLOGIN_VERSION_COMMIT_VALUE "${VERSION}")
+  endif()
+else()
+  set(HYPRLOGIN_VERSION_COMMIT_VALUE "${VERSION}")
 endif()
 
-message(STATUS "VERSION COMMIT: ${HYPRLOCK_VERSION_COMMIT}")
-message(STATUS "COMMIT: ${HYPRLOCK_COMMIT}")
+add_compile_definitions(HYPRLOGIN_VERSION_COMMIT="${HYPRLOGIN_VERSION_COMMIT_VALUE}")
+
+message(STATUS "VERSION COMMIT: ${HYPRLOGIN_VERSION_COMMIT_VALUE}")
+message(STATUS "COMMIT: ${HYPRLOGIN_COMMIT_VALUE}")
 
 # position independent build: __FILE__
 add_compile_options(-fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=)
@@ -104,8 +129,8 @@ endif()
 message(STATUS "Found pam at ${PAM_LIB}")
 
 file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp")
-add_executable(hyprlock ${SRCFILES})
-target_link_libraries(hyprlock PRIVATE ${PAM_LIB} rt Threads::Threads PkgConfig::deps
+add_executable(hyprlogin ${SRCFILES})
+target_link_libraries(hyprlogin PRIVATE ${PAM_LIB} rt Threads::Threads PkgConfig::deps
                                        OpenGL::EGL OpenGL::GLES3)
 
 # protocols
@@ -127,7 +152,7 @@ function(protocolnew protoPath protoName external)
     COMMAND hyprwayland-scanner --client ${path}/${protoName}.xml
             ${CMAKE_SOURCE_DIR}/protocols/
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-  target_sources(hyprlock PRIVATE protocols/${protoName}.cpp
+  target_sources(hyprlogin PRIVATE protocols/${protoName}.cpp
                                    protocols/${protoName}.hpp)
 endfunction()
 function(protocolWayland)
@@ -137,7 +162,7 @@ function(protocolWayland)
     COMMAND hyprwayland-scanner --wayland-enums --client
             ${WAYLAND_SCANNER_PKGDATA_DIR}/wayland.xml ${CMAKE_SOURCE_DIR}/protocols/
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-  target_sources(hyprlock PRIVATE protocols/wayland.cpp protocols/wayland.hpp)
+  target_sources(hyprlogin PRIVATE protocols/wayland.cpp protocols/wayland.hpp)
 endfunction()
 
 make_directory(${CMAKE_SOURCE_DIR}/protocols) # we don't ship any custom ones so
@@ -154,12 +179,17 @@ protocolnew("staging/cursor-shape" "cursor-shape-v1" false)
 protocolnew("stable/tablet" "tablet-v2" false)
 
 # Installation
-install(TARGETS hyprlock)
-
-install(FILES ${CMAKE_SOURCE_DIR}/pam/hyprlock
-        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/pam.d)
+install(TARGETS hyprlogin)
 
 install(
   FILES ${CMAKE_SOURCE_DIR}/assets/example.conf
-  DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/hypr
-  RENAME hyprlock.conf)
+  DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/hyprlogin/examples
+  RENAME hyprlogin.conf)
+
+install(
+  FILES ${CMAKE_SOURCE_DIR}/assets/hyprland-greeter.conf
+  DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/hyprlogin)
+
+install(
+  FILES ${CMAKE_SOURCE_DIR}/assets/greetd-config.toml
+  DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/hyprlogin)

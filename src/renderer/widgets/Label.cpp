@@ -128,6 +128,40 @@ void CLabel::reset() {
 }
 
 bool CLabel::draw(const SRenderData& data) {
+    if (label.allowForceUpdate) {
+        const auto updated = formatString(labelPreFormat);
+        if (updated.formatted != label.formatted || updated.alwaysUpdate != label.alwaysUpdate) {
+            // If a previous async request is still pending but the text has
+            // changed again, discard the stale request and start fresh.
+            // This prevents the UI from getting stuck on an intermediate prompt
+            // (e.g. "Validating...") when the backend already moved on.
+            if (m_pendingResource) {
+                if (updated.formatted != request.text) {
+                    request.text     = updated.formatted;
+                    m_pendingResource = false;
+                    resourceID       = 0;
+                    if (asset) {
+                        g_asyncResourceManager->unload(asset);
+                        asset = nullptr;
+                    }
+                } else {
+                    return true;
+                }
+            }
+
+            label = updated;
+            request.text     = label.formatted;
+            m_pendingResource = true;
+
+            AWP<IWidget> widget(m_self);
+            if (label.cmd) {
+                m_dynamicRevision += (label.updateEveryMs == 0) ? 1 : label.updateEveryMs;
+                g_asyncResourceManager->requestTextCmd(request, m_dynamicRevision, widget.lock());
+            } else
+                g_asyncResourceManager->requestText(request, widget.lock());
+        }
+    }
+
     if (!asset) {
         asset = g_asyncResourceManager->getAssetByID(resourceID);
 
@@ -181,8 +215,11 @@ CBox CLabel::getBoundingBoxWl() const {
 }
 
 void CLabel::onClick(uint32_t button, bool down, const Vector2D& pos) {
-    if (down && !onclickCommand.empty())
+    if (down && !onclickCommand.empty()) {
+        if (handleInternalCommand(onclickCommand))
+            return;
         spawnAsync(onclickCommand);
+    }
 }
 
 void CLabel::onHover(const Vector2D& pos) {

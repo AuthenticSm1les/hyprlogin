@@ -1,0 +1,6 @@
+[terminal]
+vt = 1
+
+[default_session]
+command = "Hyprland --config /usr/share/hyprlogin/hyprland-greeter.conf"
+user = "greeter"

@@ -198,6 +198,20 @@ IWidget::SFormatResult IWidget::formatString(std::string in) {
     IWidget::SFormatResult result;
     replaceInString(in, "$DESC", std::string{user_gecos ? user_gecos : ""});
     replaceInString(in, "$USER", std::string{username ? username : ""});
+    if (in.contains("$GREETD_USER")) {
+        replaceInString(in, "$GREETD_USER", g_pHyprlock->getTargetUsername());
+        result.allowForceUpdate = true;
+    }
+
+    if (in.contains("$GREETD_PROMPT")) {
+        replaceInString(in, "$GREETD_PROMPT", g_pHyprlock->getGreeterPrompt());
+        result.allowForceUpdate = true;
+    }
+
+    if (in.contains("$GREETD_SESSION")) {
+        replaceInString(in, "$GREETD_SESSION", g_pHyprlock->getSelectedSessionName());
+        result.allowForceUpdate = true;
+    }
     replaceInString(in, "<br/>", std::string{"\n"});
 
     if (in.contains("$TIME12")) {

@@ -1,13 +1,14 @@
-# hyprlock
-Hyprland's simple, yet multi-threaded and GPU-accelerated screen locking utility.
+# hyprlogin
+Hyprland's simple, yet multi-threaded and GPU-accelerated `greetd` greeter utility.
 
 ## Features
- - Uses the ext-session-lock protocol
+ - Runs inside a Hyprland greeter session managed by `greetd`
+ - Speaks the `greetd` IPC protocol over `GREETD_SOCK`
+ - Supports username, password, and session selection flows
  - Support for fractional-scale
  - Fully GPU accelerated
  - Multi-threaded resource acquisition
- - Blurred screenshot as the background
- - Native fingerprint support (using libfprint's dbus interface)
+ - Custom backgrounds, gradients, blur, animations, shadows, etc.
  - Some of Hyprland's eyecandy: gradient borders, blur, animations, shadows, etc.
  - and more...
 
@@ -15,15 +16,75 @@ Hyprland's simple, yet multi-threaded and GPU-accelerated screen locking utility
 
 ![](https://i.ibb.co/8Bd98BP/20240220-00h12m46s.png)
 
-## Docs / Configuration
-[See the wiki](https://wiki.hyprland.org/Hypr-Ecosystem/hyprlock/)
+## Status
+This fork repurposes `hyprlock` into a graphical greeter. It is no longer a session locker, and it should be run under `greetd` inside a dedicated Hyprland greeter session.
 
-## Arch install
-```sh
-pacman -S hyprlock # binary x86 tagged release
-# or
-yay -S hyprlock-git # compiles from latest source
+Current state:
+
+- work in progress
+- versioning reset to `0.0.0` until the project is ready for a real release
+- builds and packages locally
+- includes a working `greetd` backend, session discovery, default user/session selection, and sample configs
+- still has at least one known unresolved bug in the failed-auth UI path; see `todo.txt`
+
+## Known Issues
+
+- Failed authentication can still leave the greeter visually stuck on `Validating...` even though backend debug shows the greetd transaction and local failure reset complete.
+- Internal naming is still mixed in places because the fork is not fully renamed away from the upstream `hyprlock` structure yet.
+- Debug instrumentation is still heavier than it should be for a stable release.
+
+Typical `greetd` setup:
+
+```toml
+[default_session]
+command = "start-hyprland --config /etc/hyprlogin/hyprland.conf"
+user = "greeter"
 ```
+
+Example Hyprland config:
+
+```ini
+exec-once = hyprlogin
+```
+
+Installed sample files:
+
+- `/usr/share/hyprlogin/examples/hyprlogin.conf`
+- `/usr/share/hyprlogin/hyprland-greeter.conf`
+- `/usr/share/hyprlogin/greetd-config.toml`
+
+Config resolution:
+
+- `hyprlogin -c /path/to/config` uses the explicit path
+- otherwise `hyprlogin` first looks for `/etc/hyprlogin/hyprlogin.conf`
+- if that file does not exist, it falls back to `/usr/share/hyprlogin/examples/hyprlogin.conf`
+
+Config compatibility:
+
+- the config grammar stays aligned with `hyprlock`
+- existing `hyprlock` widget/category syntax remains valid
+- `hyprlogin` only adds extra variables and optional internal actions; it does not require a forked config format
+- this keeps future syncs with upstream `hyprlock` mostly constrained to behavior and rendering code rather than a divergent config parser
+- optional greeter-only additions include `sessions:default_user`, `sessions:default_session`, `input-field:placeholder_text_username`, `general:debug_mode`, and `general:debug_log_path`
+
+The default `hyprlogin` config supports:
+
+- `Enter` to submit the current username or password prompt
+- `Tab`, `Shift+Tab`, left, and right arrows to cycle sessions
+- clickable session switching via `hyprlogin:session_prev` and `hyprlogin:session_next`
+- distinct username and password placeholders while keeping the visual style close to upstream `hyprlock`
+
+Session discovery behavior:
+
+- Wayland sessions are read from `/usr/share/wayland-sessions`
+- X11 sessions are read from `/usr/share/xsessions`
+- hidden and non-display desktop entries are skipped
+- `TryExec` and `Exec` are checked for availability before a session is shown
+- the greeter exports `XDG_SESSION_TYPE`, `XDG_SESSION_DESKTOP`, `DESKTOP_SESSION`, and `XDG_CURRENT_DESKTOP` when possible
+- `sessions:default_session` can preselect a session by display name, command, desktop file path, or desktop file basename
+- `sessions:default_user` prefills the username field on startup and after failed authentication resets
+- `general:debug_mode = true` enables verbose startup, greetd transaction, and auth-state logs without needing the CLI `--verbose` flag
+- `general:debug_log_path = /tmp/hyprlogin-debug.log` appends the same greetd debug trace to a file so failed login attempts can be inspected after the greeter returns
 
 ## Building
 
@@ -51,10 +112,28 @@ Such distros usually offer development versions of library package - commonly su
 Building:
 ```sh
 cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -S . -B ./build
-cmake --build ./build --config Release --target hyprlock -j`nproc 2>/dev/null || getconf _NPROCESSORS_CONF`
+cmake --build ./build --config Release --target hyprlogin -j`nproc 2>/dev/null || getconf _NPROCESSORS_CONF`
 ```
 
 Installation:
 ```sh
 sudo cmake --install build
 ```
+
+## Contributing
+
+If you want to help debug or improve the fork:
+
+1. Build it locally with CMake.
+2. Run it under a real `greetd` + Hyprland greeter session rather than from an already logged-in desktop session.
+3. Reproduce issues with `general:debug_mode` enabled in the config.
+4. Read `todo.txt` for currently tracked persistent bugs.
+5. Keep the config format compatible with upstream `hyprlock` where possible.
+6. Prefer fixing stale upstream leftovers intentionally rather than renaming everything blindly.
+7. Use `CHANGE_DOCUMENTATION.md` as the high-level project change summary.
+
+## Repository Notes
+
+- `CHANGE_DOCUMENTATION.md` is the sanitized project change summary
+- `todo.txt` contains the current persistent bug list
+- generated build/package outputs are intended to stay untracked

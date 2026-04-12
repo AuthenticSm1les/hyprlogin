@@ -5,6 +5,7 @@
 #include "../renderer/AsyncResourceManager.hpp"
 #include "../auth/Auth.hpp"
 #include "../auth/Fingerprint.hpp"
+#include "../helpers/MiscFunctions.hpp"
 #include "./Egl.hpp"
 #include "./Seat.hpp"
 #include <chrono>
@@ -19,11 +20,126 @@
 #include <cstring>
 #include <xf86drm.h>
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <sdbus-c++/sdbus-c++.h>
 #include <hyprutils/os/Process.hpp>
 #include <malloc.h>
+#include <fstream>
 
 using namespace Hyprutils::OS;
+
+static std::string trimWhitespace(std::string value) {
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+    value.erase(std::find_if(value.rbegin(), value.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), value.end());
+    return value;
+}
+
+static std::string sanitizeDesktopExec(const std::string& exec) {
+    std::string sanitized;
+    sanitized.reserve(exec.size());
+
+    for (size_t i = 0; i < exec.size(); ++i) {
+        if (exec[i] == '%' && i + 1 < exec.size() && std::isalpha(static_cast<unsigned char>(exec[i + 1]))) {
+            ++i;
+            continue;
+        }
+
+        sanitized.push_back(exec[i]);
+    }
+
+    return trimWhitespace(sanitized);
+}
+
+static std::string getDesktopEntryValue(const std::filesystem::path& path, const std::string& key) {
+    std::ifstream file(path);
+    if (!file.is_open())
+        return "";
+
+    std::string line;
+    bool        inDesktopEntry = false;
+    while (std::getline(file, line)) {
+        line = trimWhitespace(line);
+        if (line.empty() || line.starts_with("#"))
+            continue;
+
+        if (line == "[Desktop Entry]") {
+            inDesktopEntry = true;
+            continue;
+        }
+
+        if (!inDesktopEntry)
+            continue;
+
+        if (line.starts_with('['))
+            break;
+
+        const auto pos = line.find('=');
+        if (pos == std::string::npos)
+            continue;
+
+        if (line.substr(0, pos) == key)
+            return trimWhitespace(line.substr(pos + 1));
+    }
+
+    return "";
+}
+
+static bool uiDebugMode() {
+    static const auto DEBUGMODE = g_pConfigManager->getValue<Hyprlang::INT>("general:debug_mode");
+    return *DEBUGMODE != 0;
+}
+
+static std::string uiDebugLogPath() {
+    static const auto DEBUGLOGPATH = g_pConfigManager->getValue<Hyprlang::STRING>("general:debug_log_path");
+    return std::string{std::string_view{*DEBUGLOGPATH}};
+}
+
+static void logUIDebug(const std::string& message) {
+    if (!uiDebugMode())
+        return;
+
+    Log::logger->log(Log::INFO, "[ui-debug] {}", message);
+
+    const auto path = uiDebugLogPath();
+    if (path.empty())
+        return;
+
+    std::ofstream out(path, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << "[ui-debug] " << message << '\n';
+}
+
+static std::optional<SGreeterSession> parseDesktopSession(const std::filesystem::path& path, const std::string& type) {
+    const auto hidden    = getDesktopEntryValue(path, "Hidden");
+    const auto noDisplay = getDesktopEntryValue(path, "NoDisplay");
+    const auto name      = getDesktopEntryValue(path, "Name");
+    const auto tryExec   = getDesktopEntryValue(path, "TryExec");
+    const auto exec      = sanitizeDesktopExec(getDesktopEntryValue(path, "Exec"));
+    const auto desktops  = getDesktopEntryValue(path, "DesktopNames");
+
+    if (hidden == "true" || noDisplay == "true")
+        return std::nullopt;
+
+    if (name.empty() || exec.empty())
+        return std::nullopt;
+
+    if (!tryExec.empty() && !isExecutableCommand(tryExec))
+        return std::nullopt;
+
+    if (!isExecutableCommand(exec))
+        return std::nullopt;
+
+    return SGreeterSession{
+        .name         = name,
+        .command      = exec,
+        .type         = type,
+        .desktopNames = desktops,
+        .desktopFile  = path.string(),
+    };
+}
 
 static void setMallocThreshold() {
 #ifdef M_TRIM_THRESHOLD
@@ -54,6 +170,12 @@ CHyprlock::CHyprlock(std::string_view wlDisplay, const bool immediateRender, con
     const auto CURRENTDESKTOP = getenv("XDG_CURRENT_DESKTOP");
     const auto SZCURRENTD     = std::string{CURRENTDESKTOP ? CURRENTDESKTOP : ""};
     m_sCurrentDesktop         = SZCURRENTD;
+
+    loadSessions();
+
+    static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
+    if (const std::string_view defaultUser = *DEFAULTUSER; !defaultUser.empty())
+        setInputBuffer(std::string{defaultUser});
 }
 
 CHyprlock::~CHyprlock() {
@@ -486,6 +608,7 @@ void CHyprlock::unlock() {
         return;
     }
 
+    Log::logger->log(Log::INFO, "unlock: starting fade-out animation");
     g_pRenderer->startFadeOut(true);
 
     renderAllOutputs();
@@ -502,6 +625,106 @@ void CHyprlock::clearPasswordBuffer() {
     m_sPasswordState.passBuffer = "";
 
     renderAllOutputs();
+}
+
+const std::string& CHyprlock::getInputBuffer() {
+    return m_sPasswordState.passBuffer;
+}
+
+void CHyprlock::setInputBuffer(const std::string& input) {
+    m_sPasswordState.passBuffer = input;
+    enqueueForceUpdateTimers();
+    renderAllOutputs();
+}
+
+bool CHyprlock::isInputBufferHidden() {
+    return m_sGreeterState.secretInput;
+}
+
+void CHyprlock::setGreeterPrompt(const std::string& prompt, bool secretInput) {
+    m_sGreeterState.prompt      = prompt;
+    m_sGreeterState.secretInput = secretInput;
+    logUIDebug(std::format("setGreeterPrompt: prompt='{}' secret_input={}", prompt, secretInput));
+    enqueueForceUpdateTimers();
+    renderAllOutputs();
+}
+
+const std::string& CHyprlock::getGreeterPrompt() {
+    return m_sGreeterState.prompt;
+}
+
+void CHyprlock::setTargetUsername(const std::string& username) {
+    m_sGreeterState.targetUsername = username;
+    logUIDebug(std::format("setTargetUsername: '{}'", username));
+    enqueueForceUpdateTimers();
+    renderAllOutputs();
+}
+
+void CHyprlock::clearTargetUsername() {
+    m_sGreeterState.targetUsername.clear();
+    logUIDebug("clearTargetUsername");
+    enqueueForceUpdateTimers();
+    renderAllOutputs();
+}
+
+const std::string& CHyprlock::getTargetUsername() {
+    return m_sGreeterState.targetUsername;
+}
+
+void CHyprlock::setGreeterUIState(const std::string& prompt, bool secretInput, std::string_view username) {
+    m_sGreeterState.prompt         = prompt;
+    m_sGreeterState.secretInput    = secretInput;
+    m_sGreeterState.targetUsername = std::string{username};
+    logUIDebug(std::format("setGreeterUIState: prompt='{}' secret_input={} username='{}'", prompt, secretInput, username));
+    enqueueForceUpdateTimers();
+    renderAllOutputs();
+}
+
+void CHyprlock::cycleSession(int delta) {
+    if (m_sGreeterState.sessions.empty())
+        return;
+
+    const auto count = static_cast<int>(m_sGreeterState.sessions.size());
+    auto       next  = static_cast<int>(m_sGreeterState.selectedSessionIndex) + delta;
+    if (next < 0)
+        next = count - 1;
+    else if (next >= count)
+        next = 0;
+
+    m_sGreeterState.selectedSessionIndex = next;
+    enqueueForceUpdateTimers();
+}
+
+std::string CHyprlock::getSelectedSessionName() {
+    if (m_sGreeterState.sessions.empty())
+        return "No sessions found";
+
+    return m_sGreeterState.sessions.at(m_sGreeterState.selectedSessionIndex).name;
+}
+
+std::string CHyprlock::getSelectedSessionCommand() {
+    if (m_sGreeterState.sessions.empty())
+        return "";
+
+    return m_sGreeterState.sessions.at(m_sGreeterState.selectedSessionIndex).command;
+}
+
+std::vector<std::string> CHyprlock::getSelectedSessionEnv() {
+    std::vector<std::string> env;
+
+    if (m_sGreeterState.sessions.empty())
+        return env;
+
+    const auto& session = m_sGreeterState.sessions.at(m_sGreeterState.selectedSessionIndex);
+    env.emplace_back(std::format("XDG_SESSION_TYPE={}", session.type == "x11" ? "x11" : "wayland"));
+    env.emplace_back(std::format("XDG_SESSION_DESKTOP={}", session.desktopNames.empty() ? session.name : session.desktopNames));
+    auto desktopFilePath = std::filesystem::path(session.desktopFile).filename();
+    desktopFilePath.replace_extension("");
+    env.emplace_back(std::format("DESKTOP_SESSION={}", desktopFilePath.string()));
+    if (!session.desktopNames.empty())
+        env.emplace_back(std::format("XDG_CURRENT_DESKTOP={}", session.desktopNames));
+
+    return env;
 }
 
 void CHyprlock::renderOutput(const std::string& stringPort) {
@@ -594,6 +817,7 @@ void CHyprlock::onKey(uint32_t key, bool down) {
         m_bCapsLock = xkb_state_mod_name_is_active(g_pSeatManager->m_pXKBState, XKB_MOD_NAME_CAPS, XKB_STATE_MODS_LOCKED);
         m_bNumLock  = xkb_state_mod_name_is_active(g_pSeatManager->m_pXKBState, XKB_MOD_NAME_NUM, XKB_STATE_MODS_LOCKED);
         m_bCtrl     = xkb_state_mod_name_is_active(g_pSeatManager->m_pXKBState, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE);
+        m_bShift    = xkb_state_mod_name_is_active(g_pSeatManager->m_pXKBState, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE);
 
         const auto              SYM = xkb_state_key_get_one_sym(g_pSeatManager->m_pXKBState, key + 8);
 
@@ -616,11 +840,20 @@ void CHyprlock::onKey(uint32_t key, bool down) {
 
 void CHyprlock::handleKeySym(xkb_keysym_t sym, bool composed) {
     const auto SYM = sym;
+    const bool CANBACKTOUSER = !m_sGreeterState.targetUsername.empty() && m_sGreeterState.secretInput && m_sPasswordState.passBuffer.empty();
 
-    if (SYM == XKB_KEY_Escape || (m_bCtrl && (SYM == XKB_KEY_u || SYM == XKB_KEY_BackSpace || SYM == XKB_KEY_a))) {
-        Log::logger->log(Log::INFO, "Clearing password buffer");
+    if (SYM == XKB_KEY_Escape && CANBACKTOUSER) {
+        Log::logger->log(Log::INFO, "Returning to username input");
+        clearTargetUsername();
+        setGreeterPrompt("Enter username", false);
+        m_sPasswordState.passBuffer = "";
+    } else if (SYM == XKB_KEY_Escape || (m_bCtrl && (SYM == XKB_KEY_u || SYM == XKB_KEY_BackSpace || SYM == XKB_KEY_a))) {
+        Log::logger->log(Log::INFO, "Clearing input buffer");
 
         m_sPasswordState.passBuffer = "";
+    } else if (SYM == XKB_KEY_Tab || SYM == XKB_KEY_ISO_Left_Tab || SYM == XKB_KEY_Left || SYM == XKB_KEY_Right) {
+        const int delta = (SYM == XKB_KEY_Left || SYM == XKB_KEY_ISO_Left_Tab || (SYM == XKB_KEY_Tab && m_bShift)) ? -1 : 1;
+        cycleSession(delta);
     } else if (SYM == XKB_KEY_Return || SYM == XKB_KEY_KP_Enter) {
         Log::logger->log(Log::INFO, "Authenticating");
 
@@ -744,33 +977,53 @@ bool CHyprlock::acquireSessionLock() {
 }
 
 void CHyprlock::releaseSessionLock() {
-    Log::logger->log(Log::INFO, "Unlocking session");
+    try {
+        Log::logger->log(Log::INFO, "releaseSessionLock: releasing greeter lock");
 
-    if (m_bTerminate) {
-        Log::logger->log(Log::ERR, "Unlock already happend?");
-        return;
+        if (m_bTerminate) {
+            Log::logger->log(Log::ERR, "releaseSessionLock: already terminated?");
+            return;
+        }
+
+        if (!m_sLockState.lock) {
+            Log::logger->log(Log::ERR, "releaseSessionLock: no lock object!");
+            return;
+        }
+
+        if (!m_bLocked) {
+            // Would be a protocol error to allow this
+            Log::logger->log(Log::ERR, "releaseSessionLock: never received locked event!");
+            return;
+        }
+
+        Log::logger->log(Log::INFO, "releaseSessionLock: calling sendUnlockAndDestroy");
+        m_sLockState.lock->sendUnlockAndDestroy();
+        m_sLockState.lock = nullptr;
+
+        static const auto EXITCOMMAND = g_pConfigManager->getValue<Hyprlang::STRING>("general:exit_command");
+        const std::string exitCommand = *EXITCOMMAND;
+        if (!exitCommand.empty()) {
+            Log::logger->log(Log::INFO, "releaseSessionLock: executing exit_command '{}'", exitCommand);
+            spawnAsync(exitCommand);
+        }
+
+        Log::logger->log(Log::INFO, "releaseSessionLock: greeter finished, setting terminate flag");
+
+        m_bTerminate = true;
+        m_bLocked    = false;
+
+        Log::logger->log(Log::INFO, "releaseSessionLock: calling wl_display_roundtrip");
+        wl_display_roundtrip(m_sWaylandState.display);
+        Log::logger->log(Log::INFO, "releaseSessionLock: roundtrip completed");
+    } catch (const std::exception& e) {
+        Log::logger->log(Log::ERR, "releaseSessionLock: exception caught: {}", e.what());
+        m_bTerminate = true;
+        m_bLocked    = false;
+    } catch (...) {
+        Log::logger->log(Log::ERR, "releaseSessionLock: unknown exception caught");
+        m_bTerminate = true;
+        m_bLocked    = false;
     }
-
-    if (!m_sLockState.lock) {
-        Log::logger->log(Log::ERR, "Unlock without a lock object!");
-        return;
-    }
-
-    if (!m_bLocked) {
-        // Would be a protocol error to allow this
-        Log::logger->log(Log::ERR, "Trying to unlock the session, but never recieved the locked event!");
-        return;
-    }
-
-    m_sLockState.lock->sendUnlockAndDestroy();
-    m_sLockState.lock = nullptr;
-
-    Log::logger->log(Log::INFO, "Unlocked, exiting!");
-
-    m_bTerminate = true;
-    m_bLocked    = false;
-
-    wl_display_roundtrip(m_sWaylandState.display);
 }
 
 void CHyprlock::onLockLocked() {
@@ -830,6 +1083,65 @@ size_t CHyprlock::getPasswordBufferLen() {
 size_t CHyprlock::getPasswordBufferDisplayLen() {
     // Counts utf-8 codepoints in the buffer. A byte is counted if it does not match 0b10xxxxxx.
     return std::count_if(m_sPasswordState.passBuffer.begin(), m_sPasswordState.passBuffer.end(), [](char c) { return (c & 0xc0) != 0x80; });
+}
+
+void CHyprlock::loadSessions() {
+    static const auto WAYLANDPATH = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:wayland_path");
+    static const auto X11PATH     = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:x11_path");
+    static const auto DEFAULTSESSION = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_session");
+
+    auto loadPath = [this](const std::string& directory, const std::string& type) {
+        if (!std::filesystem::exists(directory))
+            return;
+
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".desktop")
+                continue;
+
+            const auto session = parseDesktopSession(entry.path(), type);
+            if (session.has_value())
+                m_sGreeterState.sessions.emplace_back(*session);
+        }
+    };
+
+    loadPath(*WAYLANDPATH, "wayland");
+    loadPath(*X11PATH, "x11");
+
+    if (isExecutableCommand("startx")) {
+        m_sGreeterState.sessions.emplace_back(SGreeterSession{
+            .name         = "Default X11 Session",
+            .command      = "startx",
+            .type         = "x11",
+            .desktopNames = "",
+            .desktopFile  = "/usr/share/xsessions/startx.desktop",
+        });
+    }
+
+    std::ranges::sort(m_sGreeterState.sessions, [](const auto& a, const auto& b) { return a.name < b.name; });
+    m_sGreeterState.sessions.erase(std::unique(m_sGreeterState.sessions.begin(), m_sGreeterState.sessions.end(),
+                                               [](const auto& a, const auto& b) { return a.name == b.name && a.command == b.command && a.type == b.type; }),
+                                   m_sGreeterState.sessions.end());
+
+    const std::string_view defaultSession = *DEFAULTSESSION;
+    if (defaultSession.empty() || m_sGreeterState.sessions.empty())
+        return;
+
+    const auto matchesDefault = [defaultSession](const SGreeterSession& session) {
+        if (session.name == defaultSession || session.command == defaultSession || session.desktopFile == defaultSession)
+            return true;
+
+        const auto desktopFileName = std::filesystem::path(session.desktopFile).filename().string();
+        if (desktopFileName == defaultSession)
+            return true;
+
+        auto desktopFileStem = std::filesystem::path(desktopFileName);
+        desktopFileStem.replace_extension("");
+        return desktopFileStem.string() == defaultSession;
+    };
+
+    const auto it = std::ranges::find_if(m_sGreeterState.sessions, matchesDefault);
+    if (it != m_sGreeterState.sessions.end())
+        m_sGreeterState.selectedSessionIndex = std::distance(m_sGreeterState.sessions.begin(), it);
 }
 
 ASP<CTimer> CHyprlock::addTimer(const std::chrono::system_clock::duration& timeout, std::function<void(ASP<CTimer> self, void* data)> cb_, void* data, bool force) {

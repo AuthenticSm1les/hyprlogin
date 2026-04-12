@@ -5,7 +5,6 @@
 #include "../core/AnimationManager.hpp"
 #include <hyprlang.hpp>
 #include <hyprutils/string/String.hpp>
-#include <hyprutils/path/Path.hpp>
 #include <filesystem>
 #include <glob.h>
 #include <cstring>
@@ -182,11 +181,16 @@ static void configHandleGradientDestroy(void** data) {
 }
 
 static std::expected<std::string, std::string> getMainConfigPath() {
-    static const auto PATHS = Hyprutils::Path::findConfig("hyprlock");
-    if (PATHS.first.has_value())
-        return PATHS.first.value();
-    else
-        return std::unexpected{"Could not find config in HOME, XDG_CONFIG_HOME, XDG_CONFIG_DIRS or /etc/hypr."};
+    static const auto SYSTEMPATH  = std::filesystem::path(HYPRLOGIN_SYSTEM_CONFIG);
+    static const auto EXAMPLEPATH = std::filesystem::path(HYPRLOGIN_EXAMPLE_CONFIG);
+
+    if (std::filesystem::exists(SYSTEMPATH))
+        return SYSTEMPATH.string();
+
+    if (std::filesystem::exists(EXAMPLEPATH))
+        return EXAMPLEPATH.string();
+
+    return std::unexpected{std::format("Could not find {} or fallback example {}", SYSTEMPATH.string(), EXAMPLEPATH.string())};
 }
 
 std::expected<std::string, std::string> CConfigManager::resolveConfigPath(std::optional<std::string_view> explicitPath) {
@@ -239,16 +243,25 @@ void CConfigManager::init() {
     m_config.addConfigValue("general:hide_cursor", Hyprlang::INT{0});
     m_config.addConfigValue("general:ignore_empty_input", Hyprlang::INT{0});
     m_config.addConfigValue("general:immediate_render", Hyprlang::INT{0});
+    m_config.addConfigValue("general:exit_command", Hyprlang::STRING{"hyprctl dispatch exit"});
     m_config.addConfigValue("general:fractional_scaling", Hyprlang::INT{2});
     m_config.addConfigValue("general:screencopy_mode", Hyprlang::INT{0});
-    m_config.addConfigValue("general:fail_timeout", Hyprlang::INT{2000});
+    m_config.addConfigValue("general:fail_timeout", Hyprlang::INT{4000});
+    m_config.addConfigValue("general:debug_mode", Hyprlang::INT{0});
+    m_config.addConfigValue("general:debug_log_path", Hyprlang::STRING{"/tmp/hyprlogin-debug.log"});
 
-    m_config.addConfigValue("auth:pam:enabled", Hyprlang::INT{1});
-    m_config.addConfigValue("auth:pam:module", Hyprlang::STRING{"hyprlock"});
+    m_config.addConfigValue("auth:greetd:enabled", Hyprlang::INT{1});
+    m_config.addConfigValue("auth:pam:enabled", Hyprlang::INT{0});
+    m_config.addConfigValue("auth:pam:module", Hyprlang::STRING{"login"});
     m_config.addConfigValue("auth:fingerprint:enabled", Hyprlang::INT{0});
     m_config.addConfigValue("auth:fingerprint:ready_message", Hyprlang::STRING{"(Scan fingerprint to unlock)"});
     m_config.addConfigValue("auth:fingerprint:present_message", Hyprlang::STRING{"Scanning fingerprint"});
     m_config.addConfigValue("auth:fingerprint:retry_delay", Hyprlang::INT{250});
+
+    m_config.addConfigValue("sessions:wayland_path", Hyprlang::STRING{"/usr/share/wayland-sessions"});
+    m_config.addConfigValue("sessions:x11_path", Hyprlang::STRING{"/usr/share/xsessions"});
+    m_config.addConfigValue("sessions:default_user", Hyprlang::STRING{""});
+    m_config.addConfigValue("sessions:default_session", Hyprlang::STRING{""});
 
     m_config.addConfigValue("animations:enabled", Hyprlang::INT{1});
 
@@ -320,6 +333,7 @@ void CConfigManager::init() {
     m_config.addSpecialConfigValue("input-field", "valign", Hyprlang::STRING{"center"});
     m_config.addSpecialConfigValue("input-field", "position", LAYOUTCONFIG("0,0"));
     m_config.addSpecialConfigValue("input-field", "placeholder_text", Hyprlang::STRING{"<i>Input Password</i>"});
+    m_config.addSpecialConfigValue("input-field", "placeholder_text_username", Hyprlang::STRING{"<i>Input Username</i>"});
     m_config.addSpecialConfigValue("input-field", "hide_input", Hyprlang::INT{0});
     m_config.addSpecialConfigValue("input-field", "hide_input_base_color", Hyprlang::INT{0xEE00FF99});
     m_config.addSpecialConfigValue("input-field", "rounding", Hyprlang::INT{-1});
@@ -502,6 +516,7 @@ std::vector<CConfigManager::SWidgetConfig> CConfigManager::getWidgetConfigs() {
                 {"valign", m_config.getSpecialConfigValue("input-field", "valign", k.c_str())},
                 {"position", m_config.getSpecialConfigValue("input-field", "position", k.c_str())},
                 {"placeholder_text", m_config.getSpecialConfigValue("input-field", "placeholder_text", k.c_str())},
+                {"placeholder_text_username", m_config.getSpecialConfigValue("input-field", "placeholder_text_username", k.c_str())},
                 {"hide_input", m_config.getSpecialConfigValue("input-field", "hide_input", k.c_str())},
                 {"hide_input_base_color", m_config.getSpecialConfigValue("input-field", "hide_input_base_color", k.c_str())},
                 {"rounding", m_config.getSpecialConfigValue("input-field", "rounding", k.c_str())},
