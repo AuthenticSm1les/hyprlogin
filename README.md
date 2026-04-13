@@ -16,6 +16,14 @@ Hyprland's simple, yet multi-threaded and GPU-accelerated `greetd` greeter utili
 
 ![](https://i.ibb.co/8Bd98BP/20240220-00h12m46s.png)
 
+## Docs / Configuration
+[See the wiki](https://wiki.hyprland.org/Hypr-Ecosystem/hyprlock/)
+
+## Arch install
+```sh
+paru -S hyprlogin-git # compiles from latest source
+```
+
 ## Status
 This fork repurposes `hyprlock` into a graphical greeter. It is no longer a session locker, and it should be run under `greetd` inside a dedicated Hyprland greeter session.
 
@@ -162,10 +170,8 @@ If you want to help debug or improve the fork:
 1. Build it locally with CMake.
 2. Run it under a real `greetd` + Hyprland greeter session rather than from an already logged-in desktop session.
 3. Reproduce issues with `general:debug_mode` enabled in the config.
-4. Read `todo.txt` for currently tracked persistent bugs.
-5. Keep the config format compatible with upstream `hyprlock` where possible.
-6. Prefer fixing stale upstream leftovers intentionally rather than renaming everything blindly.
-7. Use `CHANGE_DOCUMENTATION.md` as the high-level project change summary.
+4. Keep the config format compatible with upstream `hyprlock` where possible.
+5. Prefer fixing stale upstream leftovers intentionally rather than renaming everything blindly.
 
 ## Repository Notes
 
