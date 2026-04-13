@@ -85,6 +85,37 @@ static void logGreetdResponse(const char* stage, const CGreetd::SResponse& respo
                      authMessageTypeName(response.authType), response.errorType, response.description, response.authMessage);
 }
 
+struct SGreetdFailResetPayload {
+    std::string prompt;
+    bool        secretInput = false;
+    std::string username;
+    std::string inputBuffer;
+    std::string failText;
+};
+
+struct SGreetdPromptPayload {
+    std::string prompt;
+    bool        secretInput = false;
+};
+
+static void applyGreetdFailResetOnMainThread(ASP<CTimer> self, void* data) {
+    std::unique_ptr<SGreetdFailResetPayload> payload{static_cast<SGreetdFailResetPayload*>(data)};
+    if (!payload)
+        return;
+
+    g_pHyprlock->setGreeterUIState(payload->prompt, payload->secretInput, payload->username);
+    g_pHyprlock->setInputBuffer(payload->inputBuffer);
+    g_pAuth->enqueueFail(payload->failText, AUTH_IMPL_GREETD);
+}
+
+static void applyGreetdPromptOnMainThread(ASP<CTimer> self, void* data) {
+    std::unique_ptr<SGreetdPromptPayload> payload{static_cast<SGreetdPromptPayload*>(data)};
+    if (!payload)
+        return;
+
+    g_pHyprlock->setGreeterPrompt(payload->prompt, payload->secretInput);
+}
+
 void CGreetd::init() {
     const auto* sockPath = getenv("GREETD_SOCK");
     static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
@@ -119,7 +150,6 @@ void CGreetd::handleInput(const std::string& input) {
         logGreetdDebug(std::format("handleInput: captured username '{}'", input));
         setPrompt(std::format("Password for {}", input), true);
         g_pHyprlock->setInputBuffer("");
-        g_pHyprlock->renderAllOutputs();
         return;
     }
 
@@ -136,7 +166,6 @@ void CGreetd::handleInput(const std::string& input) {
     }
 
     g_pHyprlock->setGreeterPrompt("Validating...", true);
-    g_pHyprlock->renderAllOutputs();
     logGreetdDebug(std::format("handleInput: starting auth transaction for user '{}'", g_pHyprlock->getTargetUsername()));
     m_worker = std::thread([this, input]() {
         this->runConversationThread(input);
@@ -241,7 +270,6 @@ void CGreetd::runConversation(const std::string& input) {
 
     if (!connectToServer()) {
         failAndReset("Unable to communicate with greetd", false);
-        g_pHyprlock->renderAllOutputs();
         return;
     }
 
@@ -253,14 +281,12 @@ void CGreetd::runConversation(const std::string& input) {
     if (response.type == EResponseType::INVALID) {
         finishConversation();
         failAndReset("Unable to communicate with greetd", false);
-        g_pHyprlock->renderAllOutputs();
         return;
     }
 
     if (response.type == EResponseType::SUCCESS) {
         handleResponse(response);
         finishConversation();
-        g_pHyprlock->renderAllOutputs();
         return;
     }
 
@@ -269,14 +295,12 @@ void CGreetd::runConversation(const std::string& input) {
         cancelSession();
         finishConversation();
         failAndReset(failText, false, true, isCooldownMessage(failText));
-        g_pHyprlock->renderAllOutputs();
         return;
     }
 
     if (response.type != EResponseType::AUTH_MESSAGE) {
         finishConversation();
         failAndReset("Authentication failed", false, true);
-        g_pHyprlock->renderAllOutputs();
         return;
     }
 
@@ -294,7 +318,6 @@ void CGreetd::runConversation(const std::string& input) {
             cancelSession();
             finishConversation();
             failAndReset(failText, false, true, isCooldownMessage(failText));
-            g_pHyprlock->renderAllOutputs();
             return;
         }
         case EAuthMessageType::INVALID:
@@ -302,7 +325,6 @@ void CGreetd::runConversation(const std::string& input) {
             cancelSession();
             finishConversation();
             failAndReset("Authentication failed", false, true);
-            g_pHyprlock->renderAllOutputs();
             return;
     }
 
@@ -311,8 +333,6 @@ void CGreetd::runConversation(const std::string& input) {
         handleResponse(response);
         logGreetdDebug("runConversation: handleResponse returned, finishing conversation");
         finishConversation();
-        logGreetdDebug("runConversation: calling renderAllOutputs before thread exit");
-        g_pHyprlock->renderAllOutputs();
         logGreetdDebug("runConversation: worker thread exiting normally");
         return;
     }
@@ -322,7 +342,6 @@ void CGreetd::runConversation(const std::string& input) {
     cancelSession();
     finishConversation();
     failAndReset(failText, false, true, isCooldownMessage(failText));
-    g_pHyprlock->renderAllOutputs();
 }
 
 void CGreetd::handleResponse(const SResponse& response) {
@@ -340,7 +359,7 @@ void CGreetd::handleResponse(const SResponse& response) {
                 m_lastPrompt = "Starting session";
             }
 
-            g_pHyprlock->setGreeterPrompt("Starting session", true);
+            dispatchPromptToMainThread("Starting session", true);
             logGreetdDebug(std::format("handleResponse: start_session cmd='{}' env_count={}", SESSION, g_pHyprlock->getSelectedSessionEnv().size()));
             const auto START = startSession(SESSION, g_pHyprlock->getSelectedSessionEnv());
             logGreetdResponse("start_session", START);
@@ -424,15 +443,36 @@ void CGreetd::failAndReset(const std::string& failText, bool cancelSessionReques
     }
 
     if (effectiveRepromptUsername) {
-        g_pHyprlock->setGreeterUIState(std::format("{} Enter username.", normalizedFailText), false, "");
-        g_pHyprlock->setInputBuffer(defaultUser);
+        dispatchFailResetToMainThread(std::format("{} Enter username.", normalizedFailText), false, "", defaultUser, normalizedFailText);
     } else {
         const std::string newPrompt = cooldown ? std::format("Authentication cooldown for {}", preservedUser) : std::format("Password for {}", preservedUser);
-        g_pHyprlock->setGreeterUIState(newPrompt, true, preservedUser);
-        g_pHyprlock->setInputBuffer("");
+        dispatchFailResetToMainThread(newPrompt, true, preservedUser, "", normalizedFailText);
     }
+}
 
-    g_pAuth->enqueueFail(normalizedFailText, AUTH_IMPL_GREETD);
+void CGreetd::dispatchFailResetToMainThread(std::string prompt, bool secretInput, std::string username, std::string inputBuffer, std::string failText) {
+    auto* payload = new SGreetdFailResetPayload{
+        .prompt      = std::move(prompt),
+        .secretInput = secretInput,
+        .username    = std::move(username),
+        .inputBuffer = std::move(inputBuffer),
+        .failText    = std::move(failText),
+    };
+
+    logGreetdDebug(std::format("dispatchFailResetToMainThread: prompt='{}' secret_input={} username='{}' input_len={} fail='{}'", payload->prompt,
+                               payload->secretInput, payload->username, payload->inputBuffer.size(), payload->failText));
+
+    g_pHyprlock->addTimer(std::chrono::milliseconds(0), applyGreetdFailResetOnMainThread, payload);
+}
+
+void CGreetd::dispatchPromptToMainThread(std::string prompt, bool secretInput) {
+    auto* payload = new SGreetdPromptPayload{
+        .prompt      = std::move(prompt),
+        .secretInput = secretInput,
+    };
+
+    logGreetdDebug(std::format("dispatchPromptToMainThread: prompt='{}' secret_input={}", payload->prompt, payload->secretInput));
+    g_pHyprlock->addTimer(std::chrono::milliseconds(0), applyGreetdPromptOnMainThread, payload);
 }
 
 bool CGreetd::connectToServer() {
