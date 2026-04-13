@@ -53,6 +53,44 @@ Installed sample files:
 - `/usr/share/hyprlogin/hyprland-greeter.conf`
 - `/usr/share/hyprlogin/greetd-config.toml`
 
+## Install and Use
+
+Arch Linux:
+
+```sh
+paru -S hyprlogin-git
+```
+
+Main paths after install:
+
+- `/usr/bin/hyprlogin`
+- `/etc/hyprlogin/hyprlogin.conf`
+- `/usr/share/hyprlogin/examples/hyprlogin.conf`
+- `/usr/share/hyprlogin/hyprland-greeter.conf`
+- `/usr/share/hyprlogin/greetd-config.toml`
+
+Minimal setup:
+
+1. Install and enable `greetd`.
+2. Point `/etc/greetd/config.toml` at the shipped greeter session:
+
+```toml
+[terminal]
+vt = 1
+
+[default_session]
+command = "start-hyprland -- --config /usr/share/hyprlogin/hyprland-greeter.conf"
+user = "greeter"
+```
+
+3. Copy the sample config and customize it:
+
+```sh
+sudo install -Dm644 /usr/share/hyprlogin/examples/hyprlogin.conf /etc/hyprlogin/hyprlogin.conf
+```
+
+4. Restart `greetd` or reboot and test the greeter from a fresh login session.
+
 Config resolution:
 
 - `hyprlogin -c /path/to/config` uses the explicit path
