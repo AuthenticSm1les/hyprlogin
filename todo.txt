@@ -1,2 +1,0 @@
-Persistent bugs:
-- Wrong-password failure path can still leave the greeter visually stuck on `Validating...` even after the backend completes `failAndReset(...)`. Debug so far shows the greetd transaction, `cancel_session`, and prompt reset all complete, so the remaining bug is in UI/widget state propagation or rendering after failed auth.

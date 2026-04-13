@@ -22,14 +22,11 @@ This fork repurposes `hyprlock` into a graphical greeter. It is no longer a sess
 Current state:
 
 - work in progress
-- versioning reset to `0.0.0` until the project is ready for a real release
 - builds and packages locally
 - includes a working `greetd` backend, session discovery, default user/session selection, and sample configs
-- still has at least one known unresolved bug in the failed-auth UI path; see `todo.txt`
 
 ## Known Issues
 
-- Failed authentication can still leave the greeter visually stuck on `Validating...` even though backend debug shows the greetd transaction and local failure reset complete.
 - Internal naming is still mixed in places because the fork is not fully renamed away from the upstream `hyprlock` structure yet.
 - Debug instrumentation is still heavier than it should be for a stable release.
 
@@ -172,6 +169,4 @@ If you want to help debug or improve the fork:
 
 ## Repository Notes
 
-- `CHANGE_DOCUMENTATION.md` is the sanitized project change summary
-- `todo.txt` contains the current persistent bug list
 - generated build/package outputs are intended to stay untracked
