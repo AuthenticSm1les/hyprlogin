@@ -48,6 +48,8 @@ class CGreetd : public IAuthImplementation {
     void      runConversationThread(const std::string& input);
     void      handleResponse(const SResponse& response);
     void      failAndReset(const std::string& failText, bool cancelSession, bool repromptUsername = true, bool cooldown = false);
+    void      dispatchPromptToMainThread(std::string prompt, bool secretInput);
+    void      dispatchFailResetToMainThread(std::string prompt, bool secretInput, std::string username, std::string inputBuffer, std::string failText);
     bool      wasWaitingForSecret();
     bool      shouldRepromptUsername(const std::string& failText) const;
     bool      isCooldownMessage(const std::string& failText) const;
