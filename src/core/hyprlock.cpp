@@ -607,8 +607,10 @@ void CHyprlock::run() {
     Log::logger->log(Log::INFO, "Reached the end, exiting");
 }
 
-void CHyprlock::unlock() {
-    if (!m_bLocked) {
+void CHyprlock::fadeOutAndUnlock() {
+    m_fadeOutOrTerminate = true;
+
+    if (!m_sLockState.locked) {
         Log::logger->log(Log::WARN, "Unlock called, but not locked yet. This can happen when dpms is off during the grace period.");
         return;
     }
@@ -619,8 +621,16 @@ void CHyprlock::unlock() {
     renderAllOutputs();
 }
 
-bool CHyprlock::isUnlocked() {
-    return !m_bLocked;
+bool CHyprlock::isFadingOutOrTerminating() {
+    return m_fadeOutOrTerminate;
+}
+
+bool CHyprlock::isTerminating() {
+    return m_bTerminate;
+}
+
+bool CHyprlock::isLockAquired() {
+    return m_lockAquired;
 }
 
 void CHyprlock::clearPasswordBuffer() {
@@ -784,11 +794,11 @@ void CHyprlock::repeatKey(xkb_keysym_t sym) {
 }
 
 void CHyprlock::onKey(uint32_t key, bool down) {
-    if (isUnlocked())
+    if (!m_sLockState.locked)
         return;
 
     if (down && std::chrono::system_clock::now() < m_tGraceEnds) {
-        unlock();
+        fadeOutAndUnlock();
         return;
     }
 
@@ -999,7 +1009,7 @@ void CHyprlock::releaseSessionLock() {
             return;
         }
 
-        if (!m_bLocked) {
+        if (!m_sLockState.locked) {
             // Would be a protocol error to allow this
             Log::logger->log(Log::ERR, "releaseSessionLock: never received locked event!");
             return;
@@ -1018,27 +1028,27 @@ void CHyprlock::releaseSessionLock() {
 
         Log::logger->log(Log::INFO, "releaseSessionLock: greeter finished, setting terminate flag");
 
-        m_bTerminate = true;
-        m_bLocked    = false;
+        m_bTerminate         = true;
+        m_sLockState.locked = false;
 
         Log::logger->log(Log::INFO, "releaseSessionLock: calling wl_display_roundtrip");
         wl_display_roundtrip(m_sWaylandState.display);
         Log::logger->log(Log::INFO, "releaseSessionLock: roundtrip completed");
     } catch (const std::exception& e) {
         Log::logger->log(Log::ERR, "releaseSessionLock: exception caught: {}", e.what());
-        m_bTerminate = true;
-        m_bLocked    = false;
+        m_bTerminate         = true;
+        m_sLockState.locked = false;
     } catch (...) {
         Log::logger->log(Log::ERR, "releaseSessionLock: unknown exception caught");
-        m_bTerminate = true;
-        m_bLocked    = false;
+        m_bTerminate         = true;
+        m_sLockState.locked = false;
     }
 }
 
 void CHyprlock::onLockLocked() {
     Log::logger->log(Log::INFO, "onLockLocked called");
 
-    m_bLocked = true;
+    m_sLockState.locked = true;
 }
 
 void CHyprlock::onLockFinished() {
@@ -1049,7 +1059,7 @@ void CHyprlock::onLockFinished() {
         return;
     }
 
-    if (m_bLocked)
+    if (m_sLockState.locked)
         // The `finished` event specifies that whenever the `locked` event has been recieved and the compositor sends `finished`,
         // `unlock_and_destroy` should be called by the client.
         // This does not mean the session gets unlocked! That is ultimately the responsiblity of the compositor.
@@ -1057,8 +1067,9 @@ void CHyprlock::onLockFinished() {
     else
         m_sLockState.lock.reset();
 
-    m_sLockState.lock = nullptr;
-    m_bTerminate      = true;
+    m_sLockState.lock   = nullptr;
+    m_sLockState.locked = false;
+    m_bTerminate        = true;
 }
 
 SP<CCExtSessionLockV1> CHyprlock::getSessionLock() {

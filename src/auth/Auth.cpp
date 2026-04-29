@@ -88,9 +88,9 @@ void CAuth::terminate() {
 
 static void unlockCallback(ASP<CTimer> self, void* data) {
     try {
-        Log::logger->log(Log::INFO, "unlockCallback: calling g_pHyprlock->unlock()");
-        g_pHyprlock->unlock();
-        Log::logger->log(Log::INFO, "unlockCallback: returned from unlock()");
+        Log::logger->log(Log::INFO, "unlockCallback: calling g_pHyprlock->fadeOutAndUnlock()");
+        g_pHyprlock->fadeOutAndUnlock();
+        Log::logger->log(Log::INFO, "unlockCallback: returned from fadeOutAndUnlock()");
     } catch (const std::exception& e) {
         Log::logger->log(Log::ERR, "unlockCallback: exception caught: {}", e.what());
     } catch (...) {

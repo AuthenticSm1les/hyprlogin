@@ -136,7 +136,7 @@ void CPasswordInputField::reset() {
         fade.fadeOutTimer.reset();
     }
 
-    if (g_pHyprlock->m_bTerminate)
+    if (g_pHyprlock->isTerminating())
         return;
 
     if (placeholder.asset)
