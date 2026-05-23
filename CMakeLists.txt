@@ -25,8 +25,6 @@ include(GNUInstallDirs)
 
 # configure
 set(CMAKE_CXX_STANDARD 23)
-add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-unused-value
-                    -Wno-missing-field-initializers -Wno-narrowing)
 
 
 
@@ -132,6 +130,8 @@ file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp")
 add_executable(hyprlogin ${SRCFILES})
 target_link_libraries(hyprlogin PRIVATE ${PAM_LIB} rt Threads::Threads PkgConfig::deps
                                        OpenGL::EGL OpenGL::GLES3)
+target_compile_options(hyprlogin PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-unused-value
+                                          -Wno-missing-field-initializers -Wno-narrowing)
 
 # protocols
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)

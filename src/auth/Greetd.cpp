@@ -8,7 +8,6 @@
 #include <cerrno>
 #include <cctype>
 #include <cstring>
-#include <fstream>
 #include <format>
 #include <hyprlang.hpp>
 #include <sys/socket.h>
@@ -23,39 +22,6 @@ eAuthImplementations CGreetd::getImplType() {
     return AUTH_IMPL_GREETD;
 }
 
-static bool greetdDebugMode() {
-    static const auto DEBUGMODE = g_pConfigManager->getValue<Hyprlang::INT>("general:debug_mode");
-    return *DEBUGMODE != 0;
-}
-
-static std::string greetdDebugLogPath() {
-    static const auto DEBUGLOGPATH = g_pConfigManager->getValue<Hyprlang::STRING>("general:debug_log_path");
-    return std::string{std::string_view{*DEBUGLOGPATH}};
-}
-
-static void appendGreetdDebugFile(const std::string& message) {
-    if (!greetdDebugMode())
-        return;
-
-    const auto path = greetdDebugLogPath();
-    if (path.empty())
-        return;
-
-    std::ofstream out(path, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    out << message << '\n';
-}
-
-static void logGreetdDebug(const std::string& message) {
-    if (!greetdDebugMode())
-        return;
-
-    Log::logger->log(Log::INFO, "[greetd-debug] {}", message);
-    appendGreetdDebugFile(message);
-}
-
 static const char* responseTypeName(CGreetd::EResponseType type) {
     switch (type) {
         case CGreetd::EResponseType::SUCCESS: return "success";
@@ -64,25 +30,6 @@ static const char* responseTypeName(CGreetd::EResponseType type) {
         case CGreetd::EResponseType::INVALID:
         default: return "invalid";
     }
-}
-
-static const char* authMessageTypeName(CGreetd::EAuthMessageType type) {
-    switch (type) {
-        case CGreetd::EAuthMessageType::VISIBLE: return "visible";
-        case CGreetd::EAuthMessageType::SECRET: return "secret";
-        case CGreetd::EAuthMessageType::INFO: return "info";
-        case CGreetd::EAuthMessageType::ERROR: return "error";
-        case CGreetd::EAuthMessageType::INVALID:
-        default: return "invalid";
-    }
-}
-
-static void logGreetdResponse(const char* stage, const CGreetd::SResponse& response) {
-    if (!greetdDebugMode())
-        return;
-
-    Log::logger->log(Log::INFO, "[greetd-debug] {}: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", stage, responseTypeName(response.type),
-                     authMessageTypeName(response.authType), response.errorType, response.description, response.authMessage);
 }
 
 struct SGreetdFailResetPayload {
@@ -125,18 +72,18 @@ void CGreetd::init() {
         return;
     }
 
-    logGreetdDebug(std::format("init: GREETD_SOCK available at '{}'", sockPath));
+    Log::logger->debug("init: GREETD_SOCK available at '{}'", sockPath);
 
     if (const std::string_view defaultUser = *DEFAULTUSER; !defaultUser.empty()) {
         m_username = std::string{defaultUser};
         g_pHyprlock->setTargetUsername(m_username);
         g_pHyprlock->setInputBuffer("");
-        logGreetdDebug(std::format("init: default user '{}' selected, starting at password prompt", m_username));
+        Log::logger->debug("init: default user '{}' selected, starting at password prompt", m_username);
         setPrompt(std::format("Password for {}", m_username), true);
         return;
     }
 
-    logGreetdDebug("init: starting at username prompt");
+    Log::logger->debug("init: starting at username prompt");
     setPrompt("Enter username", false);
 }
 
@@ -147,7 +94,7 @@ void CGreetd::handleInput(const std::string& input) {
     if (g_pHyprlock->getTargetUsername().empty()) {
         m_username = input;
         g_pHyprlock->setTargetUsername(input);
-        logGreetdDebug(std::format("handleInput: captured username '{}'", input));
+        Log::logger->debug("handleInput: captured username '{}'", input);
         setPrompt(std::format("Password for {}", input), true);
         g_pHyprlock->setInputBuffer("");
         return;
@@ -166,7 +113,7 @@ void CGreetd::handleInput(const std::string& input) {
     }
 
     g_pHyprlock->setGreeterPrompt("Validating...", true);
-    logGreetdDebug(std::format("handleInput: starting auth transaction for user '{}'", g_pHyprlock->getTargetUsername()));
+    Log::logger->debug("handleInput: starting auth transaction for user '{}'", g_pHyprlock->getTargetUsername());
     m_worker = std::thread([this, input]() {
         this->runConversationThread(input);
     });
@@ -249,10 +196,10 @@ void CGreetd::runConversationThread(const std::string& input) {
     try {
         runConversation(input);
     } catch (const std::exception& e) {
-        logGreetdDebug("runConversationThread: exception caught");
+        Log::logger->debug("runConversationThread: exception caught");
         Log::logger->log(Log::ERR, "Greetd worker thread exception: {}", e.what());
     } catch (...) {
-        logGreetdDebug("runConversationThread: unknown exception caught");
+        Log::logger->debug("runConversationThread: unknown exception caught");
         Log::logger->log(Log::ERR, "Greetd worker thread unknown exception");
     }
 }
@@ -260,13 +207,13 @@ void CGreetd::runConversationThread(const std::string& input) {
 void CGreetd::runConversation(const std::string& input) {
     const auto finishConversation = [this]() {
         if (m_fd >= 0) {
-            logGreetdDebug(std::format("runConversation: closing fd {}", m_fd));
+            Log::logger->debug("runConversation: closing fd {}", m_fd);
             close(m_fd);
             m_fd = -1;
         }
     };
 
-    logGreetdDebug("runConversation: worker thread started");
+    Log::logger->debug("runConversation: worker thread started");
 
     if (!connectToServer()) {
         failAndReset("Unable to communicate with greetd", false);
@@ -274,9 +221,10 @@ void CGreetd::runConversation(const std::string& input) {
     }
 
     const auto USERNAME = g_pHyprlock->getTargetUsername();
-    logGreetdDebug(std::format("runConversation: create_session for '{}'", USERNAME));
-    auto       response = createSession(USERNAME);
-    logGreetdResponse("create_session", response);
+    Log::logger->debug("runConversation: create_session for '{}'", USERNAME);
+    auto response = createSession(USERNAME);
+    Log::logger->debug("create_session: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", responseTypeName(response.type),
+                       (int)response.authType, response.errorType, response.description, response.authMessage);
 
     if (response.type == EResponseType::INVALID) {
         finishConversation();
@@ -307,10 +255,11 @@ void CGreetd::runConversation(const std::string& input) {
     switch (response.authType) {
         case EAuthMessageType::VISIBLE:
         case EAuthMessageType::SECRET:
-            logGreetdDebug(std::format("runConversation: post_auth_message_response for '{}' with {} input", USERNAME,
-                                       response.authType == EAuthMessageType::SECRET ? "secret" : "visible"));
+            Log::logger->debug("runConversation: post_auth_message_response for '{}' with {} input", USERNAME,
+                                       response.authType == EAuthMessageType::SECRET ? "secret" : "visible");
             response = postResponse(input);
-            logGreetdResponse("post_auth_message_response", response);
+            Log::logger->debug("post_auth_message_response: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", responseTypeName(response.type),
+                               (int)response.authType, response.errorType, response.description, response.authMessage);
             break;
         case EAuthMessageType::INFO:
         case EAuthMessageType::ERROR: {
@@ -329,11 +278,11 @@ void CGreetd::runConversation(const std::string& input) {
     }
 
     if (response.type == EResponseType::SUCCESS) {
-        logGreetdDebug("runConversation: SUCCESS response, calling handleResponse");
+        Log::logger->debug("runConversation: SUCCESS response, calling handleResponse");
         handleResponse(response);
-        logGreetdDebug("runConversation: handleResponse returned, finishing conversation");
+        Log::logger->debug("runConversation: handleResponse returned, finishing conversation");
         finishConversation();
-        logGreetdDebug("runConversation: worker thread exiting normally");
+        Log::logger->debug("runConversation: worker thread exiting normally");
         return;
     }
 
@@ -345,7 +294,8 @@ void CGreetd::runConversation(const std::string& input) {
 }
 
 void CGreetd::handleResponse(const SResponse& response) {
-    logGreetdResponse("handleResponse", response);
+    Log::logger->debug("handleResponse: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", responseTypeName(response.type),
+                       (int)response.authType, response.errorType, response.description, response.authMessage);
     switch (response.type) {
         case EResponseType::SUCCESS: {
             const auto SESSION = g_pHyprlock->getSelectedSessionCommand();
@@ -360,16 +310,17 @@ void CGreetd::handleResponse(const SResponse& response) {
             }
 
             dispatchPromptToMainThread("Starting session", true);
-            logGreetdDebug(std::format("handleResponse: start_session cmd='{}' env_count={}", SESSION, g_pHyprlock->getSelectedSessionEnv().size()));
+            Log::logger->debug("handleResponse: start_session cmd='{}' env_count={}", SESSION, g_pHyprlock->getSelectedSessionEnv().size());
             const auto START = startSession(SESSION, g_pHyprlock->getSelectedSessionEnv());
-            logGreetdResponse("start_session", START);
+            Log::logger->debug("start_session: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", responseTypeName(START.type),
+                               (int)START.authType, START.errorType, START.description, START.authMessage);
             if (START.type != EResponseType::SUCCESS) {
                 failAndReset(START.description.empty() ? "Failed to start session" : START.description, true);
                 return;
             }
 
             g_pAuth->enqueueUnlock();
-            logGreetdDebug("handleResponse: enqueueUnlock called, worker thread exiting normally");
+            Log::logger->debug("handleResponse: enqueueUnlock called, worker thread exiting normally");
             return;
         }
         case EResponseType::AUTH_MESSAGE: {
@@ -427,8 +378,8 @@ void CGreetd::failAndReset(const std::string& failText, bool cancelSessionReques
     if (cancelSessionRequest && !effectiveRepromptUsername)
         cancelSession();
 
-    logGreetdDebug(std::format("failAndReset: fail='{}' reprompt_username={} effective_reprompt_username={} cooldown={} preserved_user='{}' default_user='{}'",
-                               normalizedFailText, repromptUsername, effectiveRepromptUsername, cooldown, preservedUser, defaultUser));
+    Log::logger->debug("failAndReset: fail='{}' reprompt_username={} effective_reprompt_username={} cooldown={} preserved_user='{}' default_user='{}'",
+                                normalizedFailText, repromptUsername, effectiveRepromptUsername, cooldown, preservedUser, defaultUser);
 
     {
         std::lock_guard<std::mutex> guard(m_stateMutex);
@@ -459,8 +410,8 @@ void CGreetd::dispatchFailResetToMainThread(std::string prompt, bool secretInput
         .failText    = std::move(failText),
     };
 
-    logGreetdDebug(std::format("dispatchFailResetToMainThread: prompt='{}' secret_input={} username='{}' input_len={} fail='{}'", payload->prompt,
-                               payload->secretInput, payload->username, payload->inputBuffer.size(), payload->failText));
+    Log::logger->debug("dispatchFailResetToMainThread: prompt='{}' secret_input={} username='{}' input_len={} fail='{}'", payload->prompt,
+                                payload->secretInput, payload->username, payload->inputBuffer.size(), payload->failText);
 
     g_pHyprlock->addTimer(std::chrono::milliseconds(0), applyGreetdFailResetOnMainThread, payload);
 }
@@ -471,13 +422,13 @@ void CGreetd::dispatchPromptToMainThread(std::string prompt, bool secretInput) {
         .secretInput = secretInput,
     };
 
-    logGreetdDebug(std::format("dispatchPromptToMainThread: prompt='{}' secret_input={}", payload->prompt, payload->secretInput));
+    Log::logger->debug("dispatchPromptToMainThread: prompt='{}' secret_input={}", payload->prompt, payload->secretInput);
     g_pHyprlock->addTimer(std::chrono::milliseconds(0), applyGreetdPromptOnMainThread, payload);
 }
 
 bool CGreetd::connectToServer() {
     if (m_fd >= 0) {
-        logGreetdDebug(std::format("connectToServer: reusing fd {}", m_fd));
+        Log::logger->debug("connectToServer: reusing fd {}", m_fd);
         return true;
     }
 
@@ -490,7 +441,7 @@ bool CGreetd::connectToServer() {
     m_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (m_fd < 0) {
         Log::logger->log(Log::ERR, "Unable to create greetd socket");
-        logGreetdDebug(std::format("connectToServer: socket() failed errno={} ({})", errno, strerror(errno)));
+        Log::logger->debug("connectToServer: socket() failed errno={} ({})", errno, strerror(errno));
         return false;
     }
 
@@ -500,13 +451,13 @@ bool CGreetd::connectToServer() {
 
     if (::connect(m_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == -1) {
         Log::logger->log(Log::ERR, "Unable to connect to greetd socket: {}", strerror(errno));
-        logGreetdDebug(std::format("connectToServer: connect() failed on fd {} errno={} ({})", m_fd, errno, strerror(errno)));
+        Log::logger->debug("connectToServer: connect() failed on fd {} errno={} ({})", m_fd, errno, strerror(errno));
         close(m_fd);
         m_fd = -1;
         return false;
     }
 
-    logGreetdDebug(std::format("connectToServer: connected to GREETD_SOCK on fd {}", m_fd));
+    Log::logger->debug("connectToServer: connected to GREETD_SOCK on fd {}", m_fd);
 
     return true;
 }
@@ -535,7 +486,7 @@ CGreetd::SResponse CGreetd::cancelSession() {
     // Don't attempt to cancel if the socket is already closed.
     // greetd often closes the connection on auth failure before we get here.
     if (m_fd < 0) {
-        logGreetdDebug("cancelSession: skipping, fd already closed");
+        Log::logger->debug("cancelSession: skipping, fd already closed");
         return {};
     }
     return roundtrip(R"({"type":"cancel_session"})");
@@ -545,44 +496,42 @@ CGreetd::SResponse CGreetd::roundtrip(const std::string& payload) {
     if (m_fd < 0 && !connectToServer())
         return {};
 
-    logGreetdDebug(std::format("roundtrip: request on fd {} payload_bytes={}", m_fd, payload.size()));
-    if (greetdDebugMode())
-        Log::logger->log(Log::INFO, "[greetd-debug] request: {}", payload);
+    Log::logger->debug("roundtrip: request on fd {} payload_bytes={}", m_fd, payload.size());
+    Log::logger->debug("roundtrip: raw request: {}", payload);
 
     const uint32_t payloadLen = payload.size();
     const auto     lenWrite   = write(m_fd, &payloadLen, sizeof(payloadLen));
     if (lenWrite != static_cast<ssize_t>(sizeof(payloadLen))) {
-        logGreetdDebug(std::format("roundtrip: failed writing length on fd {} wrote={} errno={} ({})", m_fd, lenWrite, errno, strerror(errno)));
+        Log::logger->debug("roundtrip: failed writing length on fd {} wrote={} errno={} ({})", m_fd, lenWrite, errno, strerror(errno));
         return {};
     }
 
     const auto payloadWrite = write(m_fd, payload.data(), payload.size());
     if (payloadWrite != static_cast<ssize_t>(payload.size())) {
-        logGreetdDebug(std::format("roundtrip: failed writing payload on fd {} wrote={} expected={} errno={} ({})", m_fd, payloadWrite, payload.size(), errno,
-                                   strerror(errno)));
+        Log::logger->debug("roundtrip: failed writing payload on fd {} wrote={} expected={} errno={} ({})", m_fd, payloadWrite, payload.size(), errno,
+                                   strerror(errno));
         return {};
     }
 
     uint32_t responseLen = 0;
     const auto lenRead   = read(m_fd, &responseLen, sizeof(responseLen));
     if (lenRead != static_cast<ssize_t>(sizeof(responseLen))) {
-        logGreetdDebug(std::format("roundtrip: failed reading length on fd {} read={} errno={} ({})", m_fd, lenRead, errno, strerror(errno)));
+        Log::logger->debug("roundtrip: failed reading length on fd {} read={} errno={} ({})", m_fd, lenRead, errno, strerror(errno));
         return {};
     }
 
-    logGreetdDebug(std::format("roundtrip: response length {} bytes on fd {}", responseLen, m_fd));
+    Log::logger->debug("roundtrip: response length {} bytes on fd {}", responseLen, m_fd);
 
     std::string response(responseLen, '\0');
     const auto responseRead = read(m_fd, response.data(), response.size());
     if (responseRead != static_cast<ssize_t>(response.size())) {
-        logGreetdDebug(std::format("roundtrip: failed reading payload on fd {} read={} expected={} errno={} ({})", m_fd, responseRead, response.size(), errno,
-                                   strerror(errno)));
+        Log::logger->debug("roundtrip: failed reading payload on fd {} read={} expected={} errno={} ({})", m_fd, responseRead, response.size(), errno,
+                                   strerror(errno));
         return {};
     }
 
-    if (greetdDebugMode())
-        Log::logger->log(Log::INFO, "[greetd-debug] response: {}", response);
-    logGreetdDebug(std::format("roundtrip: complete response on fd {}", m_fd));
+    Log::logger->debug("roundtrip: raw response: {}", response);
+    Log::logger->debug("roundtrip: complete response on fd {}", m_fd);
     return parseResponse(response);
 }
 
