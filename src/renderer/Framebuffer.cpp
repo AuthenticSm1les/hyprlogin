@@ -2,7 +2,6 @@
 #include "../helpers/Log.hpp"
 #include <hyprutils/os/FileDescriptor.hpp>
 #include <libdrm/drm_fourcc.h>
-#include <utility>
 
 static uint32_t drmFormatToGL(uint32_t drm) {
     switch (drm) {
@@ -72,26 +71,6 @@ bool CFramebuffer::alloc(int w, int h, bool highres) {
     m_vSize = Vector2D(w, h);
 
     return true;
-}
-
-void CFramebuffer::addStencil() {
-    if (!m_pStencilTex) {
-        Log::logger->log(Log::ERR, "No stencil texture allocated.");
-        return;
-    }
-
-    glBindTexture(GL_TEXTURE_2D, m_pStencilTex->m_iTexID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, m_vSize.x, m_vSize.y, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, m_iFb);
-
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, m_pStencilTex->m_iTexID, 0);
-
-    auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    RASSERT((status == GL_FRAMEBUFFER_COMPLETE), "Failed adding a stencil to fbo! (FB status: {})", status);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void CFramebuffer::bind() const {

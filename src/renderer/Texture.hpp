@@ -4,10 +4,8 @@
 #include "../helpers/Math.hpp"
 
 enum TEXTURETYPE {
-    TEXTURE_INVALID,  // Invalid
-    TEXTURE_RGBA,     // 4 channels
-    TEXTURE_RGBX,     // discard A
-    TEXTURE_EXTERNAL, // EGLImage
+    TEXTURE_INVALID, // Invalid
+    TEXTURE_RGBA,    // 4 channels
 };
 
 class CTexture {

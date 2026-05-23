@@ -64,7 +64,6 @@ class CPasswordInputField : public IWidget {
     Vector2D                 configSize;
 
     std::string              halign, valign, configFailText, configCheckText, outputStringPort, configPlaceholderText, configUsernamePlaceholderText, fontFamily;
-    uint64_t                 configFailTimeoutMs = 2000;
 
     int                      outThick, rounding;
 
@@ -92,6 +91,12 @@ class CPasswordInputField : public IWidget {
 
         std::string   currentText    = "";
         size_t        failedAttempts = 0;
+
+        size_t        lastPasswordLength = SIZE_MAX;
+        bool          lastDisplayFail    = false;
+        bool          lastCheckWaiting   = false;
+        bool          lastInputHidden    = false;
+        size_t        lastFailedAttempts = 0;
     } placeholder;
 
     struct {

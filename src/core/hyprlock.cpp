@@ -85,33 +85,6 @@ static std::string getDesktopEntryValue(const std::filesystem::path& path, const
     return "";
 }
 
-static bool uiDebugMode() {
-    static const auto DEBUGMODE = g_pConfigManager->getValue<Hyprlang::INT>("general:debug_mode");
-    return *DEBUGMODE != 0;
-}
-
-static std::string uiDebugLogPath() {
-    static const auto DEBUGLOGPATH = g_pConfigManager->getValue<Hyprlang::STRING>("general:debug_log_path");
-    return std::string{std::string_view{*DEBUGLOGPATH}};
-}
-
-static void logUIDebug(const std::string& message) {
-    if (!uiDebugMode())
-        return;
-
-    Log::logger->log(Log::INFO, "[ui-debug] {}", message);
-
-    const auto path = uiDebugLogPath();
-    if (path.empty())
-        return;
-
-    std::ofstream out(path, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    out << "[ui-debug] " << message << '\n';
-}
-
 static std::optional<SGreeterSession> parseDesktopSession(const std::filesystem::path& path, const std::string& type) {
     const auto hidden    = getDesktopEntryValue(path, "Hidden");
     const auto noDisplay = getDesktopEntryValue(path, "NoDisplay");
@@ -644,7 +617,7 @@ bool CHyprlock::isInputBufferHidden() {
 void CHyprlock::setGreeterPrompt(const std::string& prompt, bool secretInput) {
     m_sGreeterState.prompt      = prompt;
     m_sGreeterState.secretInput = secretInput;
-    logUIDebug(std::format("setGreeterPrompt: prompt='{}' secret_input={}", prompt, secretInput));
+    Log::logger->debug("setGreeterPrompt: prompt='{}' secret_input={}", prompt, secretInput);
     enqueueForceUpdateTimers();
     renderAllOutputs();
 }
@@ -655,14 +628,14 @@ const std::string& CHyprlock::getGreeterPrompt() {
 
 void CHyprlock::setTargetUsername(const std::string& username) {
     m_sGreeterState.targetUsername = username;
-    logUIDebug(std::format("setTargetUsername: '{}'", username));
+    Log::logger->debug("setTargetUsername: '{}'", username);
     enqueueForceUpdateTimers();
     renderAllOutputs();
 }
 
 void CHyprlock::clearTargetUsername() {
     m_sGreeterState.targetUsername.clear();
-    logUIDebug("clearTargetUsername");
+    Log::logger->debug("clearTargetUsername");
     enqueueForceUpdateTimers();
     renderAllOutputs();
 }
@@ -675,7 +648,7 @@ void CHyprlock::setGreeterUIState(const std::string& prompt, bool secretInput, s
     m_sGreeterState.prompt         = prompt;
     m_sGreeterState.secretInput    = secretInput;
     m_sGreeterState.targetUsername = std::string{username};
-    logUIDebug(std::format("setGreeterUIState: prompt='{}' secret_input={} username='{}'", prompt, secretInput, username));
+    Log::logger->debug("setGreeterUIState: prompt='{}' secret_input={} username='{}'", prompt, secretInput, username);
     enqueueForceUpdateTimers();
     renderAllOutputs();
 }
@@ -854,6 +827,7 @@ void CHyprlock::handleKeySym(xkb_keysym_t sym, bool composed) {
     } else if (SYM == XKB_KEY_Tab || SYM == XKB_KEY_ISO_Left_Tab || SYM == XKB_KEY_Left || SYM == XKB_KEY_Right) {
         const int delta = (SYM == XKB_KEY_Left || SYM == XKB_KEY_ISO_Left_Tab || (SYM == XKB_KEY_Tab && m_bShift)) ? -1 : 1;
         cycleSession(delta);
+        Log::logger->debug("cycleSession: delta={} new_index={} session='{}'", delta, m_sGreeterState.selectedSessionIndex, getSelectedSessionName());
     } else if (SYM == XKB_KEY_Return || SYM == XKB_KEY_KP_Enter) {
         Log::logger->log(Log::INFO, "Authenticating");
 
@@ -863,6 +837,8 @@ void CHyprlock::handleKeySym(xkb_keysym_t sym, bool composed) {
             Log::logger->log(Log::INFO, "Ignoring empty input");
             return;
         }
+
+        Log::logger->debug("submitInput: {} char(s) logged in as '{}'", m_sPasswordState.passBuffer.size(), getTargetUsername());
 
         g_pAuth->submitInput(m_sPasswordState.passBuffer);
     } else if (SYM == XKB_KEY_BackSpace || SYM == XKB_KEY_Delete) {
@@ -964,6 +940,7 @@ bool CHyprlock::acquireSessionLock() {
         return false;
 
     m_lockAquired = true;
+    Log::logger->debug("lock acquired, creating surfaces for {} output(s)", m_vOutputs.size());
 
     // create a session lock surface for existing outputs
     for (auto& o : m_vOutputs) {
@@ -1052,10 +1029,6 @@ void CHyprlock::onLockFinished() {
     m_bTerminate      = true;
 }
 
-SP<CCExtSessionLockManagerV1> CHyprlock::getSessionLockMgr() {
-    return m_sWaylandState.sessionLock;
-}
-
 SP<CCExtSessionLockV1> CHyprlock::getSessionLock() {
     return m_sLockState.lock;
 }
@@ -1064,20 +1037,12 @@ SP<CCWlCompositor> CHyprlock::getCompositor() {
     return m_sWaylandState.compositor;
 }
 
-wl_display* CHyprlock::getDisplay() {
-    return m_sWaylandState.display;
-}
-
 SP<CCWpFractionalScaleManagerV1> CHyprlock::getFractionalMgr() {
     return m_sWaylandState.fractional;
 }
 
 SP<CCWpViewporter> CHyprlock::getViewporter() {
     return m_sWaylandState.viewporter;
-}
-
-size_t CHyprlock::getPasswordBufferLen() {
-    return m_sPasswordState.passBuffer.length();
 }
 
 size_t CHyprlock::getPasswordBufferDisplayLen() {
@@ -1120,7 +1085,10 @@ void CHyprlock::loadSessions() {
     std::ranges::sort(m_sGreeterState.sessions, [](const auto& a, const auto& b) { return a.name < b.name; });
     m_sGreeterState.sessions.erase(std::unique(m_sGreeterState.sessions.begin(), m_sGreeterState.sessions.end(),
                                                [](const auto& a, const auto& b) { return a.name == b.name && a.command == b.command && a.type == b.type; }),
-                                   m_sGreeterState.sessions.end());
+                                  m_sGreeterState.sessions.end());
+
+    Log::logger->debug("loadSessions: found {} session(s), default='{}' selected_index={}",
+                       m_sGreeterState.sessions.size(), *DEFAULTSESSION, m_sGreeterState.selectedSessionIndex);
 
     const std::string_view defaultSession = *DEFAULTSESSION;
     if (defaultSession.empty() || m_sGreeterState.sessions.empty())

@@ -225,18 +225,6 @@ void CAsyncResourceManager::unload(ASP<CTexture> texture) {
     }
 }
 
-void CAsyncResourceManager::unloadById(ResourceID id) {
-    if (!m_assets.contains(id))
-        return;
-
-    m_assets[id].refs--;
-
-    if (m_assets[id].refs == 0) {
-        Log::logger->log(Log::TRACE, "Releasing resourceID: {}!", id);
-        m_assets.erase(id);
-    }
-}
-
 bool CAsyncResourceManager::request(ResourceID id, const AWP<IWidget>& widget) {
     if (!m_assets.contains(id)) {
         // New asset!!

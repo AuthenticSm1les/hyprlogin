@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <fcntl.h>
 #include <filesystem>
+#include <hyprlang.hpp>
 #include <hyprutils/os/Process.hpp>
 #include <hyprutils/string/String.hpp>
 #include <pwd.h>
@@ -178,19 +179,23 @@ bool isExecutableCommand(const std::string& exec) {
     if (exec.empty())
         return false;
 
-    auto firstToken = exec.substr(0, exec.find_first_of(" \t"));
-    if (firstToken.empty())
+    size_t pos = exec.find_first_not_of(" \t");
+    if (pos == std::string::npos)
         return false;
 
-    while (firstToken.contains("=") && exec.find_first_of(" \t") != std::string::npos) {
-        const auto nextPos = exec.find_first_not_of(" \t", exec.find_first_of(" \t"));
-        if (nextPos == std::string::npos)
+    std::string firstToken;
+    while (true) {
+        const auto end = exec.find_first_of(" \t", pos);
+        firstToken     = exec.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+        if (firstToken.empty())
             return false;
-
-        const auto rest = exec.substr(nextPos);
-        firstToken      = rest.substr(0, rest.find_first_of(" \t"));
         if (!firstToken.contains("="))
             break;
+        if (end == std::string::npos)
+            return false;
+        pos = exec.find_first_not_of(" \t", end);
+        if (pos == std::string::npos)
+            return false;
     }
 
     if (firstToken.starts_with('/'))

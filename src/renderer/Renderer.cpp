@@ -624,7 +624,3 @@ void CRenderer::startFadeOut(bool unlock) {
         }, true);
     }
 }
-
-void CRenderer::warpOpacity(float newOpacity) {
-    opacity->setValueAndWarp(newOpacity);
-}

@@ -3,6 +3,7 @@
 
 #include <format>
 #include <print>
+#include <fstream>
 #include <hyprutils/cli/Logger.hpp>
 
 #define RASSERT(expr, reason, ...)                                                                                                                                                 \
@@ -29,6 +30,26 @@ namespace Log {
             m_logger.log(level, std::vformat(fmt.get(), std::make_format_args(args...)));
         }
 
+        template <typename... Args>
+        void debug(std::format_string<Args...> fmt, Args&&... args) {
+            if (!m_debugMode)
+                return;
+
+            const auto msg = std::vformat(fmt.get(), std::make_format_args(args...));
+            log(Hyprutils::CLI::LOG_DEBUG, "[debug] {}", msg);
+
+            if (!m_debugFilePath.empty()) {
+                std::ofstream out(m_debugFilePath, std::ios::app);
+                if (out.is_open())
+                    out << "[debug] " << msg << '\n';
+            }
+        }
+
+        void setDebugMode(bool enable, const std::string& path = {}) {
+            m_debugMode     = enable;
+            m_debugFilePath = path;
+        }
+
         void setVerbose() {
             m_verbose = true;
             m_logger.setLogLevel(Hyprutils::CLI::LOG_TRACE);
@@ -45,6 +66,9 @@ namespace Log {
       private:
         bool                    m_quiet   = false;
         bool                    m_verbose = false;
+
+        bool                    m_debugMode     = false;
+        std::string             m_debugFilePath;
 
         Hyprutils::CLI::CLogger m_logger;
     };

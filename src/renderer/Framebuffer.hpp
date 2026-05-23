@@ -9,7 +9,6 @@ class CFramebuffer {
     ~CFramebuffer();
 
     bool          alloc(int w, int h, bool highres = false);
-    void          addStencil();
     void          bind() const;
     void          destroyBuffer();
     bool          isAllocated() const;

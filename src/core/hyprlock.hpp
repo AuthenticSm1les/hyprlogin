@@ -62,8 +62,6 @@ class CHyprlock {
     void                       handleKeySym(xkb_keysym_t sym, bool compose);
     void                       onPasswordCheckTimer();
     void                       clearPasswordBuffer();
-    bool                       passwordCheckWaiting();
-    std::optional<std::string> passwordLastFailReason();
     const std::string&         getInputBuffer();
     void                       setInputBuffer(const std::string& input);
     bool                       isInputBufferHidden();
@@ -84,13 +82,10 @@ class CHyprlock {
     void                       renderOutput(const std::string& stringPort);
     void                       renderAllOutputs();
 
-    size_t                     getPasswordBufferLen();
     size_t                     getPasswordBufferDisplayLen();
 
-    SP<CCExtSessionLockManagerV1>    getSessionLockMgr();
     SP<CCExtSessionLockV1>           getSessionLock();
     SP<CCWlCompositor>               getCompositor();
-    wl_display*                      getDisplay();
     SP<CCWpFractionalScaleManagerV1> getFractionalMgr();
     SP<CCWpViewporter>               getViewporter();
     SP<CCZwlrScreencopyManagerV1>    getScreencopy();

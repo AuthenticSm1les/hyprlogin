@@ -398,6 +398,18 @@ bool CPasswordInputField::draw(const SRenderData& data) {
 
 void CPasswordInputField::updatePlaceholder() {
 
+    if (passwordLength == placeholder.lastPasswordLength && displayFail == placeholder.lastDisplayFail &&
+        checkWaiting == placeholder.lastCheckWaiting && inputHidden == placeholder.lastInputHidden &&
+        (!displayFail || placeholder.lastFailedAttempts == g_pAuth->getFailedAttempts()))
+        return;
+
+    placeholder.lastPasswordLength = passwordLength;
+    placeholder.lastDisplayFail    = displayFail;
+    placeholder.lastCheckWaiting   = checkWaiting;
+    placeholder.lastInputHidden    = inputHidden;
+    if (displayFail)
+        placeholder.lastFailedAttempts = g_pAuth->getFailedAttempts();
+
     if (passwordLength != 0) {
         if (placeholder.asset && /* keep prompt asset cause it is likely to be used again */ displayFail) {
             g_asyncResourceManager->unload(placeholder.asset);
@@ -412,7 +424,7 @@ void CPasswordInputField::updatePlaceholder() {
     if (displayFail && placeholder.failedAttempts == g_pAuth->getFailedAttempts())
         return;
 
-    std::string& templateText = inputHidden ? configPlaceholderText : configUsernamePlaceholderText;
+    std::string templateText = inputHidden ? configPlaceholderText : configUsernamePlaceholderText;
 
     if (displayFail) {
         templateText               = configFailText;

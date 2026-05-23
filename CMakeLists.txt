@@ -178,6 +178,13 @@ protocolnew("stable/viewporter" "viewporter" false)
 protocolnew("staging/cursor-shape" "cursor-shape-v1" false)
 protocolnew("stable/tablet" "tablet-v2" false)
 
+# Testing
+option(BUILD_TESTING "Build unit and integration tests" OFF)
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 # Installation
 install(TARGETS hyprlogin)
 

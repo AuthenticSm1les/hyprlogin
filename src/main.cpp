@@ -96,6 +96,9 @@ int main(int argc, char** argv, char** envp) {
         Log::logger->log(Log::INFO, "general:debug_mode enabled");
     }
 
+    static const auto DEBUGLOGPATH = g_pConfigManager->getValue<Hyprlang::STRING>("general:debug_log_path");
+    Log::logger->setDebugMode(*DEBUGMODE, std::string{std::string_view{*DEBUGLOGPATH}});
+
     if (noFadeIn)
         g_pConfigManager->m_AnimationTree.setConfigForNode("fadeIn", false, 0.f, "default");
 

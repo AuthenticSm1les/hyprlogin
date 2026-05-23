@@ -397,6 +397,8 @@ void CConfigManager::init() {
 
     if (result.error)
         Log::logger->log(Log::ERR, "Config has errors:\n{}\nProceeding ignoring faulty entries", result.getError());
+    else
+        Log::logger->debug("config parsed successfully from '{}'", m_configCurrentPath);
 
 #undef SHADOWABLE
 #undef CLICKABLE
@@ -415,6 +417,7 @@ std::vector<CConfigManager::SWidgetConfig> CConfigManager::getWidgetConfigs() {
     //
     auto keys = m_config.listKeysForSpecialCategory("background");
     result.reserve(keys.size());
+    Log::logger->debug("found {} background(s) in config", keys.size());
     for (auto& k : keys) {
         // clang-format off
         result.push_back(CConfigManager::SWidgetConfig{

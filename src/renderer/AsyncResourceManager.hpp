@@ -49,7 +49,6 @@ class CAsyncResourceManager {
     ASP<CTexture> getAssetByID(ResourceID id);
 
     void          unload(ASP<CTexture> resource);
-    void          unloadById(ResourceID id);
 
     void          enqueueStaticAssets();
     void          enqueueScreencopyFrames();
@@ -73,10 +72,6 @@ class CAsyncResourceManager {
     // For polling when using gatherInitialResources.
     bool                           m_gathered = false;
     Hyprutils::OS::CFileDescriptor m_gatheredEventfd;
-
-    bool                           m_exit = false;
-
-    int                            m_loadedAssets = 0;
 
     // not shared between threads
     std::unordered_map<ResourceID, SPreloadedTexture> m_assets;

@@ -35,8 +35,6 @@ class CScreencopyFrame {
 
   private:
     UP<ISCFrame> m_frame = nullptr;
-
-    bool         m_dmaFailed = false;
 };
 
 // Uses a gpu buffer created via gbm_bo

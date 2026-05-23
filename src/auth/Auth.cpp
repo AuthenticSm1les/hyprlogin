@@ -22,15 +22,20 @@ CAuth::CAuth() {
         m_vImpls.emplace_back(makeShared<CFingerprint>());
 
     RASSERT(!m_vImpls.empty(), "At least one authentication method must be enabled!");
+
+    Log::logger->debug("auth constructed with {} implementation(s): greetd={} pam={} fingerprint={}", m_vImpls.size(),
+                       *ENABLEGREETD, *ENABLEPAM, *ENABLEFINGERPRINT);
 }
 
 void CAuth::start() {
+    Log::logger->debug("auth start: initializing {} implementation(s)", m_vImpls.size());
     for (const auto& i : m_vImpls) {
         i->init();
     }
 }
 
 void CAuth::submitInput(const std::string& input) {
+    Log::logger->debug("submitInput: {} char(s) to {} implementation(s)", input.size(), m_vImpls.size());
     for (const auto& i : m_vImpls) {
         i->handleInput(input);
     }
@@ -120,6 +125,7 @@ void CAuth::enqueueFail(const std::string& failText, eAuthImplementations implTy
     m_sCurrentFail.failedAttempts++;
 
     Log::logger->log(Log::INFO, "Failed attempts: {}", m_sCurrentFail.failedAttempts);
+    Log::logger->debug("enqueueFail: '{}' from impl={}", failText, (int)implType);
 
     if (m_resetDisplayFailTimer) {
         m_resetDisplayFailTimer->cancel();

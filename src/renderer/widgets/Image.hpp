@@ -32,7 +32,6 @@ class CImage : public IWidget {
 
     void         reset();
 
-    void         renderUpdate();
     void         onTimerUpdate();
     void         plantTimer();
 
