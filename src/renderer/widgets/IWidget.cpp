@@ -205,6 +205,7 @@ IWidget::SFormatResult IWidget::formatString(std::string in) {
             in = "";
         else
             replaceInString(in, "$GREETD_USER", g_pHyprlock->getTargetUsername());
+        Log::logger->debug("formatString: $GREETD_USER formatted='{}'", in);
         result.allowForceUpdate = true;
     }
 
