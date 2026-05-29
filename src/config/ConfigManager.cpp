@@ -557,6 +557,7 @@ std::vector<CConfigManager::SWidgetConfig> CConfigManager::getWidgetConfigs() {
                 {"rotate", m_config.getSpecialConfigValue("label", "rotate", k.c_str())},
                 {"text_align", m_config.getSpecialConfigValue("label", "text_align", k.c_str())},
                 {"zindex", m_config.getSpecialConfigValue("label", "zindex", k.c_str())},
+                {"hide_when_empty", m_config.getSpecialConfigValue("label", "hide_when_empty", k.c_str())},
                 SHADOWABLE("label"),
                 CLICKABLE("label"),
             }
