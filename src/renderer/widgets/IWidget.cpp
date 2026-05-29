@@ -184,6 +184,7 @@ static std::string getTime12h() {
 }
 
 IWidget::SFormatResult IWidget::formatString(std::string in) {
+    Log::logger->debug("formatString: input='{}'", in);
 
     auto  uidPassword = getpwuid(getuid());
     char* username    = uidPassword ? uidPassword->pw_name : nullptr;
@@ -199,6 +200,7 @@ IWidget::SFormatResult IWidget::formatString(std::string in) {
     replaceInString(in, "$DESC", std::string{user_gecos ? user_gecos : ""});
     replaceInString(in, "$USER", std::string{username ? username : ""});
     if (in.contains("$GREETD_USER")) {
+        Log::logger->debug("formatString: found $GREETD_USER, targetUsername='{}'", g_pHyprlock->getTargetUsername());
         if (g_pHyprlock->getTargetUsername().empty())
             in = "";
         else
