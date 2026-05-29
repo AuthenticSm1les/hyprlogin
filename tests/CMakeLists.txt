@@ -46,3 +46,7 @@ add_test(NAME Greetd COMMAND test_Greetd)
 add_test(NAME MiscFunctionsExtra COMMAND test_MiscFunctionsExtra)
 add_test(NAME Log COMMAND test_Log)
 add_test(NAME StringUtils COMMAND test_StringUtils)
+
+add_executable(test_LabelFeatures test_LabelFeatures.cpp)
+target_link_libraries(test_LabelFeatures PRIVATE GTest::GTest GTest::Main PkgConfig::deps)
+add_test(NAME LabelFeatures COMMAND test_LabelFeatures)
