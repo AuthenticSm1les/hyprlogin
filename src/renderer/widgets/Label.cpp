@@ -82,6 +82,7 @@ void CLabel::configure(const std::unordered_map<std::string, std::any>& props, c
         std::string fontFamily = std::any_cast<Hyprlang::STRING>(props.at("font_family"));
         CHyprColor  labelColor = std::any_cast<Hyprlang::INT>(props.at("color"));
         int         fontSize   = std::any_cast<Hyprlang::INT>(props.at("font_size"));
+        m_hideWhenEmpty          = std::any_cast<Hyprlang::INT>(props.at("hide_when_empty"));
 
         label = formatString(labelPreFormat);
 
@@ -161,6 +162,9 @@ bool CLabel::draw(const SRenderData& data) {
                 g_asyncResourceManager->requestText(request, widget.lock());
         }
     }
+
+    if (m_hideWhenEmpty && label.formatted.find_first_not_of(" \t\n\r\f\v") == std::string::npos)
+        return false;
 
     if (!asset) {
         asset = g_asyncResourceManager->getAssetByID(resourceID);

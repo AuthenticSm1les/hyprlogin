@@ -361,6 +361,7 @@ void CConfigManager::init() {
     m_config.addSpecialConfigValue("label", "rotate", Hyprlang::FLOAT{0});
     m_config.addSpecialConfigValue("label", "text_align", Hyprlang::STRING{""});
     m_config.addSpecialConfigValue("label", "zindex", Hyprlang::INT{0});
+    m_config.addSpecialConfigValue("label", "hide_when_empty", Hyprlang::INT{0});
     SHADOWABLE("label");
     CLICKABLE("label");
 

@@ -199,7 +199,10 @@ IWidget::SFormatResult IWidget::formatString(std::string in) {
     replaceInString(in, "$DESC", std::string{user_gecos ? user_gecos : ""});
     replaceInString(in, "$USER", std::string{username ? username : ""});
     if (in.contains("$GREETD_USER")) {
-        replaceInString(in, "$GREETD_USER", g_pHyprlock->getTargetUsername());
+        if (g_pHyprlock->getTargetUsername().empty())
+            in = "";
+        else
+            replaceInString(in, "$GREETD_USER", g_pHyprlock->getTargetUsername());
         result.allowForceUpdate = true;
     }
 

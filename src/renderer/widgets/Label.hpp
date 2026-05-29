@@ -38,6 +38,7 @@ class CLabel : public IWidget {
 
     std::string                                    labelPreFormat;
     IWidget::SFormatResult                         label;
+    bool                                           m_hideWhenEmpty = false;
 
     std::string                                    halign, valign;
     std::string                                    onclickCommand;
