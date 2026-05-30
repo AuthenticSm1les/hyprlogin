@@ -186,4 +186,5 @@ void CPam::resetConversation() {
     m_sConversationState.waitingForPamAuth = false;
     m_sConversationState.inputRequested    = false;
     m_sConversationState.failTextFromPam   = false;
+    m_bBlockInput = false;
 }
