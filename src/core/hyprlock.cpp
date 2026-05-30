@@ -6,6 +6,7 @@
 #include "../auth/Auth.hpp"
 #include "../auth/Fingerprint.hpp"
 #include "../helpers/MiscFunctions.hpp"
+#include "./Dbus.hpp"
 #include "./Egl.hpp"
 #include "./Seat.hpp"
 #include <chrono>
@@ -169,6 +170,9 @@ CHyprlock::CHyprlock(std::string_view wlDisplay, const bool immediateRender, con
     static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
     if (const std::string_view defaultUser = *DEFAULTUSER; !defaultUser.empty())
         setInputBuffer(std::string{defaultUser});
+
+    static const auto ENABLEFINGERPRINT = g_pConfigManager->getValue<Hyprlang::INT>("auth:fingerprint:enabled");
+    g_dbus                              = makeUnique<CDbus>(*ENABLEFINGERPRINT);
 }
 
 CHyprlock::~CHyprlock() {
@@ -470,9 +474,6 @@ void CHyprlock::run() {
         exit(1);
     }
 
-    const auto fingerprintAuth = g_pAuth->getImpl(AUTH_IMPL_FINGERPRINT);
-    const auto dbusConn        = (fingerprintAuth) ? ((CFingerprint*)fingerprintAuth.get())->getConnection() : nullptr;
-
     registerSignalAction(SIGUSR1, handleUnlockSignal, SA_RESTART);
     registerSignalAction(SIGUSR2, handleForceUpdateSignal);
     registerSignalAction(SIGRTMIN, handlePollTerminate);
@@ -482,13 +483,13 @@ void CHyprlock::run() {
         .fd     = wl_display_get_fd(m_sWaylandState.display),
         .events = POLLIN,
     };
-    if (dbusConn) {
+    if (g_dbus->m_connection) {
         pollfds[1] = {
-            .fd     = dbusConn->getEventLoopPollData().fd,
+            .fd     = g_dbus->m_connection->getEventLoopPollData().fd,
             .events = POLLIN,
         };
     }
-    size_t      fdcount = dbusConn ? 2 : 1;
+    size_t      fdcount = g_dbus->m_connection ? 2 : 1;
 
     std::thread pollThr([this, &pollfds, fdcount]() {
         while (!m_bTerminate) {
@@ -570,7 +571,7 @@ void CHyprlock::run() {
         m_sLoopState.wlDispatchCV.notify_all();
 
         if (pollfds[1].revents & POLLIN /* dbus */) {
-            while (dbusConn && dbusConn->processPendingEvent()) {
+            while (g_dbus->m_connection && g_dbus->m_connection->processPendingEvent()) {
                 ;
             }
         }
@@ -604,6 +605,8 @@ void CHyprlock::run() {
     g_pEGL.reset();
 
     wl_display_disconnect(DPY);
+
+    g_dbus.reset();
 
     Log::logger->log(Log::INFO, "Reached the end, exiting");
 }
