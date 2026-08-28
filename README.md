@@ -42,20 +42,22 @@ Typical `greetd` setup:
 
 ```toml
 [default_session]
-command = "start-hyprland --config /etc/hyprlogin/hyprland.conf"
+command = "start-hyprland --config /etc/hyprlogin/hyprland.lua"
 user = "greeter"
 ```
 
 Example Hyprland config:
 
-```ini
-exec-once = hyprlogin
+```lua
+hl.on("hyprland.start", function()
+    hl.exec_cmd("hyprlogin --verbose")
+end)
 ```
 
 Installed sample files:
 
 - `/usr/share/hyprlogin/examples/hyprlogin.conf`
-- `/usr/share/hyprlogin/hyprland-greeter.conf`
+- `/usr/share/hyprlogin/hyprland-greeter.lua`
 - `/usr/share/hyprlogin/greetd-config.toml`
 
 ## Install and Use
@@ -71,7 +73,7 @@ Main paths after install:
 - `/usr/bin/hyprlogin`
 - `/etc/hyprlogin/hyprlogin.conf`
 - `/usr/share/hyprlogin/examples/hyprlogin.conf`
-- `/usr/share/hyprlogin/hyprland-greeter.conf`
+- `/usr/share/hyprlogin/hyprland-greeter.lua`
 - `/usr/share/hyprlogin/greetd-config.toml`
 
 Minimal setup:
@@ -84,7 +86,7 @@ Minimal setup:
 vt = 1
 
 [default_session]
-command = "start-hyprland -- --config /usr/share/hyprlogin/hyprland-greeter.conf"
+command = "start-hyprland -- --config /usr/share/hyprlogin/hyprland-greeter.lua"
 user = "greeter"
 ```
 

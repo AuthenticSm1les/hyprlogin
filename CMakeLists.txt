@@ -194,7 +194,7 @@ install(
   RENAME hyprlogin.conf)
 
 install(
-  FILES ${CMAKE_SOURCE_DIR}/assets/hyprland-greeter.conf
+  FILES ${CMAKE_SOURCE_DIR}/assets/hyprland-greeter.lua
   DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/hyprlogin)
 
 install(

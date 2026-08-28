@@ -2,6 +2,7 @@
 .direnv
 .envrc
 .vscode/
+.idea/
 .makepkg-build/
 .makepkg-staged-src/
 pkg/
