@@ -78,8 +78,8 @@ void CGreetd::init() {
         m_username = std::string{defaultUser};
         g_pHyprlock->setTargetUsername(m_username);
         g_pHyprlock->setInputBuffer("");
-        Log::logger->debug("init: default user '{}' selected, starting at password prompt", m_username);
-        setPrompt(std::format("Password for {}", m_username), true);
+        Log::logger->debug("init: default user '{}' selected, starting auth conversation", m_username);
+        startConversation();
         return;
     }
 
@@ -88,35 +88,32 @@ void CGreetd::init() {
 }
 
 void CGreetd::handleInput(const std::string& input) {
-    if (m_worker.joinable())
-        m_worker.join();
-
     if (g_pHyprlock->getTargetUsername().empty()) {
         m_username = input;
         g_pHyprlock->setTargetUsername(input);
-        Log::logger->debug("handleInput: captured username '{}'", input);
-        setPrompt(std::format("Password for {}", input), true);
+        Log::logger->debug("handleInput: captured username '{}', starting auth conversation", input);
         g_pHyprlock->setInputBuffer("");
+        startConversation();
         return;
     }
 
+    // The user submitted a response to the current auth prompt (e.g. a
+    // password). Hand it to the waiting conversation, or start a fresh one
+    // (retry after a failed attempt) that will consume it at the prompt.
+    {
+        std::lock_guard<std::mutex> lk(m_inputMutex);
+        m_pendingInput = input;
+        m_inputReady  = true;
+    }
+    m_inputCV.notify_one();
+
+    bool active = false;
     {
         std::lock_guard<std::mutex> guard(m_stateMutex);
-        if (!m_available)
-            return;
-
-        if (m_waitingForServer)
-            return;
-
-        m_waitingForServer = true;
-        m_waitingForUser   = false;
+        active = m_conversationActive;
     }
-
-    g_pHyprlock->setGreeterPrompt("Validating...", true);
-    Log::logger->debug("handleInput: starting auth transaction for user '{}'", g_pHyprlock->getTargetUsername());
-    m_worker = std::thread([this, input]() {
-        this->runConversationThread(input);
-    });
+    if (!active)
+        startConversation();
 }
 
 bool CGreetd::checkWaiting() {
@@ -140,6 +137,14 @@ void CGreetd::terminate() {
         m_waitingForServer = false;
     }
 
+    // Wake the worker if it is blocked waiting for user input, so it can exit.
+    m_terminating.store(true);
+    {
+        std::lock_guard<std::mutex> lk(m_inputMutex);
+        m_inputReady = true;
+    }
+    m_inputCV.notify_all();
+
     if (m_worker.joinable())
         m_worker.join();
 
@@ -149,7 +154,7 @@ void CGreetd::terminate() {
     }
 }
 
-void CGreetd::setPrompt(const std::string& prompt, bool secret) {
+std::string CGreetd::resolvePrompt(const std::string& prompt, bool secret) const {
     std::string resolvedPrompt = prompt;
     if (resolvedPrompt.empty())
         resolvedPrompt = secret ? "Password" : "Username";
@@ -164,6 +169,12 @@ void CGreetd::setPrompt(const std::string& prompt, bool secret) {
             resolvedPrompt = "Enter password";
     }
 
+    return resolvedPrompt;
+}
+
+void CGreetd::setPrompt(const std::string& prompt, bool secret) {
+    const std::string resolvedPrompt = resolvePrompt(prompt, secret);
+
     {
         std::lock_guard<std::mutex> guard(m_stateMutex);
         m_available        = true;
@@ -174,6 +185,21 @@ void CGreetd::setPrompt(const std::string& prompt, bool secret) {
     }
 
     g_pHyprlock->setGreeterPrompt(resolvedPrompt, secret);
+}
+
+void CGreetd::requestPrompt(const std::string& prompt, bool secret) {
+    const std::string resolvedPrompt = resolvePrompt(prompt, secret);
+
+    {
+        std::lock_guard<std::mutex> guard(m_stateMutex);
+        m_available        = true;
+        m_lastPrompt       = resolvedPrompt;
+        m_waitingForSecret = secret;
+        m_waitingForUser   = true;
+        m_waitingForServer = false;
+    }
+
+    dispatchPromptToMainThread(resolvedPrompt, secret);
 }
 
 void CGreetd::setUnavailable(const std::string& reason) {
@@ -192,9 +218,35 @@ void CGreetd::setUnavailable(const std::string& reason) {
     g_pHyprlock->clearTargetUsername();
 }
 
-void CGreetd::runConversationThread(const std::string& input) {
+void CGreetd::startConversation() {
+    if (m_worker.joinable())
+        m_worker.join();
+
+    {
+        std::lock_guard<std::mutex> guard(m_stateMutex);
+        if (!m_available)
+            return;
+
+        m_conversationActive = true;
+        m_waitingForServer  = true;
+        m_waitingForUser    = false;
+    }
+
+    g_pHyprlock->setGreeterPrompt("Validating...", true);
+    Log::logger->debug("startConversation: spawning worker for '{}'", g_pHyprlock->getTargetUsername());
+    m_worker = std::thread([this]() { this->runConversationThread(); });
+}
+
+std::string CGreetd::waitForInput() {
+    std::unique_lock<std::mutex> lk(m_inputMutex);
+    m_inputCV.wait(lk, [this] { return m_inputReady || m_terminating.load(); });
+    m_inputReady = false;
+    return m_pendingInput;
+}
+
+void CGreetd::runConversationThread() {
     try {
-        runConversation(input);
+        runConversation();
     } catch (const std::exception& e) {
         Log::logger->debug("runConversationThread: exception caught");
         Log::logger->log(Log::ERR, "Greetd worker thread exception: {}", e.what());
@@ -202,9 +254,14 @@ void CGreetd::runConversationThread(const std::string& input) {
         Log::logger->debug("runConversationThread: unknown exception caught");
         Log::logger->log(Log::ERR, "Greetd worker thread unknown exception");
     }
+
+    {
+        std::lock_guard<std::mutex> guard(m_stateMutex);
+        m_conversationActive = false;
+    }
 }
 
-void CGreetd::runConversation(const std::string& input) {
+void CGreetd::runConversation() {
     const auto finishConversation = [this]() {
         if (m_fd >= 0) {
             Log::logger->debug("runConversation: closing fd {}", m_fd);
@@ -226,71 +283,83 @@ void CGreetd::runConversation(const std::string& input) {
     Log::logger->debug("create_session: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", responseTypeName(response.type),
                        (int)response.authType, response.errorType, response.description, response.authMessage);
 
-    if (response.type == EResponseType::INVALID) {
-        finishConversation();
-        failAndReset("Unable to communicate with greetd", false);
-        return;
-    }
+    // greetd may send several auth_messages before the session succeeds or
+    // fails (e.g. an info prompt from pam_fprintd before it falls back to a
+    // password prompt). Loop over the conversation, answering each message.
+    while (true) {
+        if (response.type == EResponseType::INVALID) {
+            finishConversation();
+            failAndReset("Unable to communicate with greetd", false);
+            return;
+        }
 
-    if (response.type == EResponseType::SUCCESS) {
-        handleResponse(response);
-        finishConversation();
-        return;
-    }
+        if (response.type == EResponseType::SUCCESS) {
+            handleResponse(response);
+            finishConversation();
+            return;
+        }
 
-    if (response.type == EResponseType::ERROR) {
-        const auto failText = response.description.empty() ? "Authentication failed" : response.description;
-        cancelSession();
-        finishConversation();
-        failAndReset(failText, false, true, isCooldownMessage(failText));
-        return;
-    }
-
-    if (response.type != EResponseType::AUTH_MESSAGE) {
-        finishConversation();
-        failAndReset("Authentication failed", false, true);
-        return;
-    }
-
-    switch (response.authType) {
-        case EAuthMessageType::VISIBLE:
-        case EAuthMessageType::SECRET:
-            Log::logger->debug("runConversation: post_auth_message_response for '{}' with {} input", USERNAME,
-                                       response.authType == EAuthMessageType::SECRET ? "secret" : "visible");
-            response = postResponse(input);
-            Log::logger->debug("post_auth_message_response: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", responseTypeName(response.type),
-                               (int)response.authType, response.errorType, response.description, response.authMessage);
-            break;
-        case EAuthMessageType::INFO:
-        case EAuthMessageType::ERROR: {
-            const auto failText = response.authMessage.empty() ? "Authentication failed" : response.authMessage;
+        if (response.type == EResponseType::ERROR) {
+            const auto failText = response.description.empty() ? "Authentication failed" : response.description;
             cancelSession();
             finishConversation();
             failAndReset(failText, false, true, isCooldownMessage(failText));
             return;
         }
-        case EAuthMessageType::INVALID:
-        default:
-            cancelSession();
+
+        if (response.type != EResponseType::AUTH_MESSAGE) {
             finishConversation();
             failAndReset("Authentication failed", false, true);
             return;
-    }
+        }
 
-    if (response.type == EResponseType::SUCCESS) {
-        Log::logger->debug("runConversation: SUCCESS response, calling handleResponse");
-        handleResponse(response);
-        Log::logger->debug("runConversation: handleResponse returned, finishing conversation");
-        finishConversation();
-        Log::logger->debug("runConversation: worker thread exiting normally");
-        return;
+        switch (response.authType) {
+            case EAuthMessageType::VISIBLE:
+            case EAuthMessageType::SECRET: {
+                const bool secret = response.authType == EAuthMessageType::SECRET;
+                Log::logger->debug("runConversation: {} prompt from greetd, waiting for user input", secret ? "secret" : "visible");
+                requestPrompt(secret ? "Password" : (response.authMessage.empty() ? "Response" : response.authMessage), secret);
+                const auto answer = waitForInput();
+                if (m_terminating.load()) {
+                    finishConversation();
+                    return;
+                }
+                {
+                    std::lock_guard<std::mutex> guard(m_stateMutex);
+                    m_waitingForServer = true;
+                    m_waitingForUser   = false;
+                }
+                dispatchPromptToMainThread("Validating...", true);
+                response = postResponse(answer);
+                Log::logger->debug("post_auth_message_response: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'",
+                                   responseTypeName(response.type), (int)response.authType, response.errorType, response.description,
+                                   response.authMessage);
+                break;
+            }
+            case EAuthMessageType::INFO:
+                // Display the info message (e.g. "Place your finger on the
+                // fingerprint reader") and continue the conversation so greetd
+                // can fall through to the next auth message or success. No
+                // user input is requested for info messages.
+                dispatchPromptToMainThread(response.authMessage.empty() ? "Authenticate" : response.authMessage, false);
+                response = postResponse("");
+                Log::logger->debug("runConversation: info message acknowledged, continuing conversation");
+                break;
+            case EAuthMessageType::ERROR: {
+                const auto failText = response.authMessage.empty() ? "Authentication failed" : response.authMessage;
+                cancelSession();
+                finishConversation();
+                failAndReset(failText, false, true, isCooldownMessage(failText));
+                return;
+            }
+            case EAuthMessageType::INVALID:
+            default:
+                cancelSession();
+                finishConversation();
+                failAndReset("Authentication failed", false, true);
+                return;
+        }
     }
-
-    const auto failText = response.type == EResponseType::AUTH_MESSAGE && !response.authMessage.empty() ? response.authMessage :
-                          (!response.description.empty() ? response.description : "Authentication failed");
-    cancelSession();
-    finishConversation();
-    failAndReset(failText, false, true, isCooldownMessage(failText));
 }
 
 void CGreetd::handleResponse(const SResponse& response) {

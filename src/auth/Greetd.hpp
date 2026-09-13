@@ -2,6 +2,8 @@
 
 #include "Auth.hpp"
 
+#include <atomic>
+#include <condition_variable>
 #include <mutex>
 #include <thread>
 
@@ -43,9 +45,13 @@ class CGreetd : public IAuthImplementation {
   private:
 
     void      setPrompt(const std::string& prompt, bool secret);
+    void      requestPrompt(const std::string& prompt, bool secret);
     void      setUnavailable(const std::string& reason);
-    void      runConversation(const std::string& input);
-    void      runConversationThread(const std::string& input);
+    std::string resolvePrompt(const std::string& prompt, bool secret) const;
+    void      startConversation();
+    void      runConversation();
+    void      runConversationThread();
+    std::string waitForInput();
     void      handleResponse(const SResponse& response);
     void      failAndReset(const std::string& failText, bool cancelSession, bool repromptUsername = true, bool cooldown = false);
     void      dispatchPromptToMainThread(std::string prompt, bool secretInput);
@@ -68,6 +74,12 @@ class CGreetd : public IAuthImplementation {
 
     std::thread m_worker;
     std::mutex  m_stateMutex;
+    std::mutex  m_inputMutex;
+    std::condition_variable m_inputCV;
+    std::string m_pendingInput;
+    bool        m_inputReady         = false;
+    bool        m_conversationActive = false;
+    std::atomic_bool m_terminating   = false;
     bool        m_waitingForServer = false;
     bool        m_waitingForUser   = true;
     bool        m_waitingForSecret = false;
