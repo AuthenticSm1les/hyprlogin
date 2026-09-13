@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <filesystem>
 #include <sys/eventfd.h>
 #include <sys/poll.h>
 
@@ -99,6 +100,12 @@ void CAsyncResourceManager::enqueueStaticAssets() {
 
             if (path.empty())
                 continue;
+
+            const auto  resolvedPath = absolutePath(path, "");
+            std::error_code ec;
+            if (!std::filesystem::exists(resolvedPath, ec))
+                Log::logger->log(Log::WARN, "{} path '{}' (resolved to '{}') is not readable by the greeter user; it will fall back to its color", c.type, path,
+                                 resolvedPath);
 
             requestImage(path, 0, nullptr);
         }
