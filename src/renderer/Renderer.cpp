@@ -1,6 +1,5 @@
 #include "Renderer.hpp"
 #include "Shaders.hpp"
-#include "Screencopy.hpp"
 #include "../config/ConfigManager.hpp"
 #include "../core/AnimationManager.hpp"
 #include "../core/Egl.hpp"
@@ -69,8 +68,9 @@ static GLuint createProgram(const std::string& vert, const std::string& frag) {
 }
 
 static void glMessageCallbackA(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) {
-    if (type != GL_DEBUG_TYPE_ERROR)
+    if (type != GL_DEBUG_TYPE_ERROR && !Log::logger->verbose())
         return;
+
     Log::logger->log(Log::INFO, "[gl] {}", (const char*)message);
 }
 

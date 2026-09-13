@@ -5,6 +5,7 @@
 #include "../helpers/MiscFunctions.hpp"
 #include "../core/hyprlock.hpp"
 #include "../config/ConfigManager.hpp"
+#include "../core/Egl.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -37,21 +38,17 @@ ResourceID CAsyncResourceManager::resourceIDForImageRequest(const std::string& p
     return scopeResourceID(3, std::hash<std::string>{}(path) ^ (revision << 32));
 }
 
-ResourceID CAsyncResourceManager::resourceIDForScreencopy(const std::string& port) {
-    return scopeResourceID(4, std::hash<std::string>{}(port));
-}
-
 ResourceID CAsyncResourceManager::requestText(const CTextResource::STextResourceData& params, const AWP<IWidget>& widget) {
     const auto RESOURCEID = resourceIDForTextRequest(params);
     if (request(RESOURCEID, widget)) {
-        Log::logger->log(Log::TRACE, "Reusing text resource \"{}\" (resourceID: {})", params.text, RESOURCEID, (uintptr_t)widget.get());
+        Log::logger->log(Log::TRACE, "Reusing text resource \"{}\" (resourceID: {})", params.text, RESOURCEID);
         return RESOURCEID;
     }
 
     auto                                 resource = makeAtomicShared<CTextResource>(CTextResource::STextResourceData{params});
     CAtomicSharedPointer<IAsyncResource> resourceGeneric{resource};
 
-    Log::logger->log(Log::TRACE, "Requesting text resource \"{}\" (resourceID: {})", params.text, RESOURCEID, (uintptr_t)widget.get());
+    Log::logger->log(Log::TRACE, "Requesting text resource \"{}\" (resourceID: {})", params.text, RESOURCEID);
     enqueue(RESOURCEID, resourceGeneric, widget);
     return RESOURCEID;
 }
@@ -59,14 +56,14 @@ ResourceID CAsyncResourceManager::requestText(const CTextResource::STextResource
 ResourceID CAsyncResourceManager::requestTextCmd(const CTextResource::STextResourceData& params, size_t revision, const AWP<IWidget>& widget) {
     const auto RESOURCEID = resourceIDForTextCmdRequest(params, revision);
     if (request(RESOURCEID, widget)) {
-        Log::logger->log(Log::TRACE, "Reusing text cmd resource \"{}\" revision {} (resourceID: {})", params.text, revision, RESOURCEID, (uintptr_t)widget.get());
+        Log::logger->log(Log::TRACE, "Reusing text cmd resource \"{}\" revision {} (resourceID: {})", params.text, revision, RESOURCEID);
         return RESOURCEID;
     }
 
     auto                                 resource = makeAtomicShared<CTextCmdResource>(CTextResource::STextResourceData{params});
     CAtomicSharedPointer<IAsyncResource> resourceGeneric{resource};
 
-    Log::logger->log(Log::TRACE, "Requesting text cmd resource \"{}\" revision {} (resourceID: {})", params.text, revision, RESOURCEID, (uintptr_t)widget.get());
+    Log::logger->log(Log::TRACE, "Requesting text cmd resource \"{}\" revision {} (resourceID: {})", params.text, revision, RESOURCEID);
     enqueue(RESOURCEID, resourceGeneric, widget);
     return RESOURCEID;
 }
@@ -74,14 +71,14 @@ ResourceID CAsyncResourceManager::requestTextCmd(const CTextResource::STextResou
 ResourceID CAsyncResourceManager::requestImage(const std::string& path, size_t revision, const AWP<IWidget>& widget) {
     const auto RESOURCEID = resourceIDForImageRequest(path, revision);
     if (request(RESOURCEID, widget)) {
-        Log::logger->log(Log::TRACE, "Reusing image resource {} revision {} (resourceID: {})", path, revision, RESOURCEID, (uintptr_t)widget.get());
+        Log::logger->log(Log::TRACE, "Reusing image resource {} revision {} (resourceID: {})", path, revision, RESOURCEID);
         return RESOURCEID;
     }
 
     auto                                 resource = makeAtomicShared<CImageResource>(absolutePath(path, ""));
     CAtomicSharedPointer<IAsyncResource> resourceGeneric{resource};
 
-    Log::logger->log(Log::TRACE, "Requesting image resource {} revision {} (resourceID: {})", path, revision, RESOURCEID, (uintptr_t)widget.get());
+    Log::logger->log(Log::TRACE, "Requesting image resource {} revision {} (resourceID: {})", path, revision, RESOURCEID);
     enqueue(RESOURCEID, resourceGeneric, widget);
     return RESOURCEID;
 }
@@ -100,59 +97,11 @@ void CAsyncResourceManager::enqueueStaticAssets() {
         if (c.type == "background" || c.type == "image") {
             std::string path = std::any_cast<Hyprlang::STRING>(c.values.at("path"));
 
-            if (path.empty() || path == "screenshot")
+            if (path.empty())
                 continue;
 
             requestImage(path, 0, nullptr);
         }
-    }
-}
-
-void CAsyncResourceManager::enqueueScreencopyFrames() {
-    if (g_pHyprlock->m_vOutputs.empty())
-        return;
-
-    static const auto ANIMATIONSENABLED = g_pConfigManager->getValue<Hyprlang::INT>("animations:enabled");
-
-    const auto        FADEINCFG  = g_pConfigManager->m_AnimationTree.getConfig("fadeIn");
-    const auto        FADEOUTCFG = g_pConfigManager->m_AnimationTree.getConfig("fadeOut");
-
-    const bool        FADENEEDSSC = *ANIMATIONSENABLED &&
-        ((FADEINCFG->pValues && FADEINCFG->pValues->internalEnabled) || // fadeIn or fadeOut enabled
-         (FADEOUTCFG->pValues && FADEOUTCFG->pValues->internalEnabled));
-
-    const auto BGSCREENSHOT = std::ranges::any_of(g_pConfigManager->getWidgetConfigs(), [](const auto& w) { //
-        return w.type == "background" && std::string{std::any_cast<Hyprlang::STRING>(w.values.at("path"))} == "screenshot";
-    });
-
-    if (!BGSCREENSHOT && !FADENEEDSSC) {
-        Log::logger->log(Log::INFO, "Skipping screencopy");
-        return;
-    }
-
-    for (const auto& MON : g_pHyprlock->m_vOutputs) {
-        m_scFrames.emplace_back(makeUnique<CScreencopyFrame>());
-        auto* frame = m_scFrames.back().get();
-        frame->capture(MON);
-        m_assets.emplace(frame->m_resourceID, SPreloadedTexture{.texture = nullptr, .refs = 1});
-    }
-}
-
-void CAsyncResourceManager::screencopyToTexture(const CScreencopyFrame& scFrame) {
-    if (!scFrame.m_ready || !m_assets.contains(scFrame.m_resourceID)) {
-        Log::logger->log(Log::ERR, "Bogus call to CAsyncResourceManager::screencopyToTexture. This is a bug!");
-        return;
-    }
-
-    m_assets[scFrame.m_resourceID].texture = scFrame.m_asset;
-
-    Log::logger->log(Log::TRACE, "Done sc frame {}", scFrame.m_resourceID);
-
-    std::erase_if(m_scFrames, [&scFrame](const auto& f) { return f.get() == &scFrame; });
-
-    if (m_scFrames.empty()) {
-        Log::logger->log(Log::INFO, "Gathered all screencopy frames - removing dmabuf listeners");
-        g_pHyprlock->removeDmabufListener();
     }
 }
 
@@ -201,7 +150,7 @@ void CAsyncResourceManager::gatherInitialResources(wl_display* display) {
             break;
         }
 
-        gathered = m_resources.empty() && m_scFrames.empty();
+        gathered = m_resources.empty();
     }
 
     Log::logger->log(Log::INFO, "Resources gathered after {} milliseconds",
@@ -301,6 +250,8 @@ void CAsyncResourceManager::onResourceFinished(ResourceID id) {
         return;
 
     Log::logger->log(Log::TRACE, "Resource to texture id:{}", id);
+
+    g_pEGL->makeCurrent(nullptr);
 
     const auto           texture = makeAtomicShared<CTexture>();
 

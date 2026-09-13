@@ -66,6 +66,15 @@ void CSessionLockSurface::configure(const Vector2D& size_, uint32_t serial_) {
     logicalSize  = size_;
     appliedScale = fractionalScale;
 
+    if (!SAMESERIAL)
+        lockSurface->sendAckConfigure(serial);
+
+    if (size_.x <= 0 || size_.y <= 0) {
+        Log::logger->log(Log::WARN, "output {} configure with zero size, waiting for valid configure", m_outputID);
+        readyForFrame = false;
+        return;
+    }
+
     if (fractional) {
         size = (size_ * fractionalScale).floor();
         viewport->sendSetDestination(logicalSize.x, logicalSize.y);
@@ -75,22 +84,38 @@ void CSessionLockSurface::configure(const Vector2D& size_, uint32_t serial_) {
         surface->sendSetBufferScale(POUTPUT->scale);
     }
 
-    if (!SAMESERIAL)
-        lockSurface->sendAckConfigure(serial);
-
     Log::logger->log(Log::INFO, "Configuring surface for logical {} and pixel {}", logicalSize, size);
 
     surface->sendDamageBuffer(0, 0, 0xFFFF, 0xFFFF);
 
-    if (!eglWindow) {
-        eglWindow = wl_egl_window_create((wl_surface*)surface->resource(), size.x, size.y);
-        RASSERT(eglWindow, "Couldn't create eglWindow");
-    } else
+    if (eglWindow && eglSurface) {
+        Log::logger->log(Log::INFO, "Resizing existing eglWindow");
         wl_egl_window_resize(eglWindow, size.x, size.y, 0, 0);
+    } else {
+        if (eglWindow)
+            wl_egl_window_destroy(eglWindow);
 
-    if (!eglSurface) {
-        eglSurface = g_pEGL->eglCreatePlatformWindowSurfaceEXT(g_pEGL->eglDisplay, g_pEGL->eglConfig, eglWindow, nullptr);
-        RASSERT(eglSurface, "Couldn't create eglSurface");
+        eglWindow = wl_egl_window_create((wl_surface*)surface->resource(), size.x, size.y);
+        if (!eglWindow) {
+            // Only fails when unable to allocate the wl_egl_window structure or size x or y is <= 0.
+            Log::logger->log(Log::WARN, "Failed to create wayland egl window (size {}x{}), waiting for valid configure", size.x, size.y);
+            readyForFrame = false;
+            return;
+        }
+
+        if (eglSurface)
+            eglDestroySurface(g_pEGL->eglDisplay, eglSurface);
+
+        eglSurface = g_pEGL->createPlatformWindowSurfaceEXT(eglWindow);
+        if (eglSurface == EGL_NO_SURFACE) {
+            readyForFrame = false;
+            return;
+        }
+
+        // When wayland frame callbacks are used directly, eglSwapInterval should be 0,
+        // otherwise eglSwapBuffers may block under some circumstances.
+        g_pEGL->makeCurrent(eglSurface);
+        eglSwapInterval(g_pEGL->eglDisplay, 0);
     }
 
     if (readyForFrame && !(SAMESIZE && SAMESCALE)) {
@@ -132,7 +157,11 @@ void CSessionLockSurface::render() {
         onCallback();
     });
 
-    eglSwapBuffers(g_pEGL->eglDisplay, eglSurface);
+    if (!g_pEGL->swapBuffers(eglSurface)) {
+        frameCallback.reset();
+        needsFrame = true;
+        return;
+    }
 
     needsFrame = FEEDBACK.needsFrame || g_pAnimationManager->shouldTickForNext();
 }

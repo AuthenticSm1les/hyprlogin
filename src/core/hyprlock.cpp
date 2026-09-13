@@ -5,6 +5,7 @@
 #include "../renderer/AsyncResourceManager.hpp"
 #include "../auth/Auth.hpp"
 #include "../auth/Fingerprint.hpp"
+#include "./Dbus.hpp"
 #include "../helpers/MiscFunctions.hpp"
 #include "./Egl.hpp"
 #include "./Seat.hpp"
@@ -18,7 +19,6 @@
 #include <unistd.h>
 #include <cassert>
 #include <cstring>
-#include <xf86drm.h>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -124,18 +124,13 @@ static void setMallocThreshold() {
 #endif
 }
 
-CHyprlock::CHyprlock(std::string_view wlDisplay, const bool immediateRender, const int graceSeconds) {
+CHyprlock::CHyprlock(std::string_view wlDisplay, const bool immediateRender) {
     setMallocThreshold();
 
     m_sWaylandState.display = wl_display_connect(wlDisplay.empty() ? nullptr : std::string{wlDisplay}.c_str());
     RASSERT(m_sWaylandState.display, "Couldn't connect to a wayland compositor");
 
     g_pEGL = makeUnique<CEGL>(m_sWaylandState.display);
-
-    if (graceSeconds > 0)
-        m_tGraceEnds = std::chrono::system_clock::now() + std::chrono::seconds(graceSeconds);
-    else
-        m_tGraceEnds = std::chrono::system_clock::from_time_t(0);
 
     static const auto IMMEDIATERENDER = g_pConfigManager->getValue<Hyprlang::INT>("general:immediate_render");
     m_bImmediateRender                = immediateRender || *IMMEDIATERENDER;
@@ -144,6 +139,9 @@ CHyprlock::CHyprlock(std::string_view wlDisplay, const bool immediateRender, con
     const auto SZCURRENTD     = std::string{CURRENTDESKTOP ? CURRENTDESKTOP : ""};
     m_sCurrentDesktop         = SZCURRENTD;
 
+    static const auto ENABLEFINGERPRINT = g_pConfigManager->getValue<Hyprlang::INT>("auth:fingerprint:enabled");
+    g_dbus                              = makeUnique<CDbus>(*ENABLEFINGERPRINT);
+
     loadSessions();
 
     static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
@@ -151,10 +149,7 @@ CHyprlock::CHyprlock(std::string_view wlDisplay, const bool immediateRender, con
         setInputBuffer(std::string{defaultUser});
 }
 
-CHyprlock::~CHyprlock() {
-    if (dma.gbmDevice)
-        gbm_device_destroy(dma.gbmDevice);
-}
+CHyprlock::~CHyprlock() {}
 
 static void registerSignalAction(int sig, void (*handler)(int), int sa_flags = 0) {
     struct sigaction sa;
@@ -162,13 +157,6 @@ static void registerSignalAction(int sig, void (*handler)(int), int sa_flags = 0
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = sa_flags;
     sigaction(sig, &sa, nullptr);
-}
-
-static void handleUnlockSignal(int sig) {
-    if (sig == SIGUSR1) {
-        Log::logger->log(Log::INFO, "Unlocking with a SIGUSR1");
-        g_pAuth->enqueueUnlock();
-    }
 }
 
 static void handleForceUpdateSignal(int sig) {
@@ -186,181 +174,13 @@ static void handlePollTerminate(int sig) {
     ;
 }
 
-static char* gbm_find_render_node(drmDevice* device) {
-    drmDevice* devices[64];
-    char*      render_node = nullptr;
-
-    int        n = drmGetDevices2(0, devices, sizeof(devices) / sizeof(devices[0]));
-    for (int i = 0; i < n; ++i) {
-        drmDevice* dev = devices[i];
-        if (device && !drmDevicesEqual(device, dev)) {
-            continue;
-        }
-        if (!(dev->available_nodes & (1 << DRM_NODE_RENDER)))
-            continue;
-
-        render_node = strdup(dev->nodes[DRM_NODE_RENDER]);
-        break;
-    }
-
-    drmFreeDevices(devices, n);
-    return render_node;
-}
-
-gbm_device* CHyprlock::createGBMDevice(drmDevice* dev) {
-    char* renderNode = gbm_find_render_node(dev);
-
-    if (!renderNode) {
-        Log::logger->log(Log::ERR, "[core] Couldn't find a render node");
-        return nullptr;
-    }
-
-    Log::logger->log(Log::TRACE, "[core] createGBMDevice: render node {}", renderNode);
-
-    int fd = open(renderNode, O_RDWR | O_CLOEXEC);
-    if (fd < 0) {
-        Log::logger->log(Log::ERR, "[core] couldn't open render node");
-        free(renderNode);
-        return nullptr;
-    }
-
-    free(renderNode);
-    return gbm_create_device(fd);
-}
-
-void CHyprlock::addDmabufListener() {
-    dma.linuxDmabufFeedback->setTrancheDone([this](CCZwpLinuxDmabufFeedbackV1* r) {
-        Log::logger->log(Log::TRACE, "[core] dmabufFeedbackTrancheDone");
-
-        dma.deviceUsed = false;
-    });
-
-    dma.linuxDmabufFeedback->setTrancheFormats([this](CCZwpLinuxDmabufFeedbackV1* r, wl_array* indices) {
-        Log::logger->log(Log::TRACE, "[core] dmabufFeedbackTrancheFormats");
-
-        if (!dma.deviceUsed || !dma.formatTable)
-            return;
-
-        struct fm_entry {
-            uint32_t format;
-            uint32_t padding;
-            uint64_t modifier;
-        };
-        // An entry in the table has to be 16 bytes long
-        static_assert(sizeof(fm_entry) == 16);
-
-        uint32_t  n_modifiers = dma.formatTableSize / sizeof(fm_entry);
-        fm_entry* fm_entry    = (struct fm_entry*)dma.formatTable;
-        uint16_t* idx;
-
-        for (idx = (uint16_t*)indices->data; (const char*)idx < (const char*)indices->data + indices->size; idx++) {
-            if (*idx >= n_modifiers)
-                continue;
-
-            Log::logger->log(Log::TRACE, "GPU Reports supported format {:x} with modifier {:x}", (fm_entry + *idx)->format, (fm_entry + *idx)->modifier);
-
-            dma.dmabufMods.push_back({(fm_entry + *idx)->format, (fm_entry + *idx)->modifier});
-        }
-    });
-
-    dma.linuxDmabufFeedback->setTrancheTargetDevice([this](CCZwpLinuxDmabufFeedbackV1* r, wl_array* device_arr) {
-        Log::logger->log(Log::TRACE, "[core] dmabufFeedbackTrancheTargetDevice");
-
-        dev_t device;
-        assert(device_arr->size == sizeof(device));
-        memcpy(&device, device_arr->data, sizeof(device));
-
-        drmDevice* drmDev;
-        if (drmGetDeviceFromDevId(device, /* flags */ 0, &drmDev) != 0)
-            return;
-
-        if (dma.gbmDevice) {
-            drmDevice* drmDevRenderer = nullptr;
-            drmGetDevice2(gbm_device_get_fd(dma.gbmDevice), /* flags */ 0, &drmDevRenderer);
-            dma.deviceUsed = drmDevicesEqual(drmDevRenderer, drmDev);
-        } else {
-            dma.gbmDevice  = createGBMDevice(drmDev);
-            dma.deviceUsed = dma.gbm;
-        }
-    });
-
-    dma.linuxDmabufFeedback->setDone([this](CCZwpLinuxDmabufFeedbackV1* r) {
-        Log::logger->log(Log::TRACE, "[core] dmabufFeedbackDone");
-
-        if (dma.formatTable)
-            munmap(dma.formatTable, dma.formatTableSize);
-
-        dma.formatTable     = nullptr;
-        dma.formatTableSize = 0;
-    });
-
-    dma.linuxDmabufFeedback->setFormatTable([this](CCZwpLinuxDmabufFeedbackV1* r, int fd, uint32_t size) {
-        Log::logger->log(Log::TRACE, "[core] dmabufFeedbackFormatTable");
-
-        dma.dmabufMods.clear();
-
-        dma.formatTable = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
-
-        if (dma.formatTable == MAP_FAILED) {
-            Log::logger->log(Log::ERR, "[core] format table failed to mmap");
-            dma.formatTable     = nullptr;
-            dma.formatTableSize = 0;
-            return;
-        }
-
-        dma.formatTableSize = size;
-    });
-
-    dma.linuxDmabufFeedback->setMainDevice([this](CCZwpLinuxDmabufFeedbackV1* r, wl_array* device_arr) {
-        Log::logger->log(Log::INFO, "[core] dmabufFeedbackMainDevice");
-
-        RASSERT(!dma.gbm, "double dmabuf feedback");
-
-        dev_t device;
-        assert(device_arr->size == sizeof(device));
-        memcpy(&device, device_arr->data, sizeof(device));
-
-        drmDevice* drmDev;
-        RASSERT(drmGetDeviceFromDevId(device, /* flags */ 0, &drmDev) == 0, "unable to open main device?");
-
-        dma.gbmDevice = createGBMDevice(drmDev);
-        drmFreeDevice(&drmDev);
-    });
-
-    dma.linuxDmabuf->setModifier([this](CCZwpLinuxDmabufV1* r, uint32_t format, uint32_t modifier_hi, uint32_t modifier_lo) {
-        dma.dmabufMods.push_back({format, (((uint64_t)modifier_hi) << 32) | modifier_lo});
-    });
-}
-
-void CHyprlock::removeDmabufListener() {
-    if (dma.linuxDmabufFeedback) {
-        dma.linuxDmabufFeedback->sendDestroy();
-        dma.linuxDmabufFeedback.reset();
-    }
-
-    if (dma.linuxDmabuf) {
-        dma.linuxDmabuf->sendDestroy();
-        dma.linuxDmabuf.reset();
-    }
-}
-
 void CHyprlock::run() {
     m_sWaylandState.registry = makeShared<CCWlRegistry>((wl_proxy*)wl_display_get_registry(m_sWaylandState.display));
     m_sWaylandState.registry->setGlobal([this](CCWlRegistry* r, uint32_t name, const char* interface, uint32_t version) {
         const std::string IFACE = interface;
         Log::logger->log(Log::INFO, "  | got iface: {} v{}", IFACE, version);
 
-        if (IFACE == zwp_linux_dmabuf_v1_interface.name) {
-            if (version < 4) {
-                Log::logger->log(Log::ERR, "cannot use linux_dmabuf with ver < 4");
-                return;
-            }
-
-            dma.linuxDmabuf         = makeShared<CCZwpLinuxDmabufV1>((wl_proxy*)wl_registry_bind((wl_registry*)r->resource(), name, &zwp_linux_dmabuf_v1_interface, 4));
-            dma.linuxDmabufFeedback = makeShared<CCZwpLinuxDmabufFeedbackV1>(dma.linuxDmabuf->sendGetDefaultFeedback());
-
-            addDmabufListener();
-        } else if (IFACE == wl_seat_interface.name) {
+        if (IFACE == wl_seat_interface.name) {
             if (g_pSeatManager->registered()) {
                 Log::logger->log(Log::WARN, "Hyprlock does not support multi-seat configurations. Only binding to the first seat.");
                 return;
@@ -384,9 +204,6 @@ void CHyprlock::run() {
                 makeShared<CCWpFractionalScaleManagerV1>((wl_proxy*)wl_registry_bind((wl_registry*)r->resource(), name, &wp_fractional_scale_manager_v1_interface, 1));
         else if (IFACE == wp_viewporter_interface.name)
             m_sWaylandState.viewporter = makeShared<CCWpViewporter>((wl_proxy*)wl_registry_bind((wl_registry*)r->resource(), name, &wp_viewporter_interface, 1));
-        else if (IFACE == zwlr_screencopy_manager_v1_interface.name)
-            m_sWaylandState.screencopy =
-                makeShared<CCZwlrScreencopyManagerV1>((wl_proxy*)wl_registry_bind((wl_registry*)r->resource(), name, &zwlr_screencopy_manager_v1_interface, 3));
         else if (IFACE == wl_shm_interface.name)
             m_sWaylandState.shm = makeShared<CCWlShm>((wl_proxy*)wl_registry_bind((wl_registry*)r->resource(), name, &wl_shm_interface, 1));
         else
@@ -401,6 +218,9 @@ void CHyprlock::run() {
             g_pRenderer->removeWidgetsFor((*outputIt)->m_ID);
             m_vOutputs.erase(outputIt);
         }
+
+        if (m_vOutputs.empty())
+            eglReleaseThread();
     });
 
     wl_display_roundtrip(m_sWaylandState.display);
@@ -421,26 +241,19 @@ void CHyprlock::run() {
     Log::logger->log(Log::INFO, "Running on {}", m_sCurrentDesktop);
 
     g_asyncResourceManager->enqueueStaticAssets();
-    g_asyncResourceManager->enqueueScreencopyFrames();
 
     if (!g_pHyprlock->m_bImmediateRender)
-        // Gather background resources and screencopy frames before locking the screen.
-        // We need to do this because as soon as we lock the screen, workspaces frames can no longer be captured. It either won't work at all, or we will capture hyprlock itself.
-        // Bypass with --immediate-render (can cause the background first rendering a solid color and missing or inaccurate screencopy frames)
+        // Gather background resources before locking the screen.
         g_asyncResourceManager->gatherInitialResources(m_sWaylandState.display);
 
     // Failed to lock the session
     if (!acquireSessionLock()) {
         m_sLoopState.timerEvent = true;
         m_sLoopState.timerCV.notify_all();
-        g_pAuth->terminate();
-        exit(1);
-    }
+         g_pAuth->terminate();
+         exit(1);
+     }
 
-    const auto fingerprintAuth = g_pAuth->getImpl(AUTH_IMPL_FINGERPRINT);
-    const auto dbusConn        = (fingerprintAuth) ? ((CFingerprint*)fingerprintAuth.get())->getConnection() : nullptr;
-
-    registerSignalAction(SIGUSR1, handleUnlockSignal, SA_RESTART);
     registerSignalAction(SIGUSR2, handleForceUpdateSignal);
     registerSignalAction(SIGRTMIN, handlePollTerminate);
 
@@ -449,13 +262,13 @@ void CHyprlock::run() {
         .fd     = wl_display_get_fd(m_sWaylandState.display),
         .events = POLLIN,
     };
-    if (dbusConn) {
+    if (g_dbus->m_connection) {
         pollfds[1] = {
-            .fd     = dbusConn->getEventLoopPollData().fd,
+            .fd     = g_dbus->m_connection->getEventLoopPollData().fd,
             .events = POLLIN,
         };
     }
-    size_t      fdcount = dbusConn ? 2 : 1;
+    size_t      fdcount = g_dbus->m_connection ? 2 : 1;
 
     std::thread pollThr([this, &pollfds, fdcount]() {
         while (!m_bTerminate) {
@@ -537,7 +350,7 @@ void CHyprlock::run() {
         m_sLoopState.wlDispatchCV.notify_all();
 
         if (pollfds[1].revents & POLLIN /* dbus */) {
-            while (dbusConn && dbusConn->processPendingEvent()) {
+            while (g_dbus->m_connection && g_dbus->m_connection->processPendingEvent()) {
                 ;
             }
         }
@@ -562,7 +375,6 @@ void CHyprlock::run() {
 
     // Now safe to destroy globals — no more timer callbacks can fire
     m_sWaylandState = {};
-    dma             = {};
 
     m_vOutputs.clear();
     g_pSeatManager.reset();
@@ -572,12 +384,14 @@ void CHyprlock::run() {
 
     wl_display_disconnect(DPY);
 
+    g_dbus.reset();
+
     Log::logger->log(Log::INFO, "Reached the end, exiting");
 }
 
 void CHyprlock::unlock() {
     if (!m_bLocked) {
-        Log::logger->log(Log::WARN, "Unlock called, but not locked yet. This can happen when dpms is off during the grace period.");
+        Log::logger->log(Log::WARN, "Unlock called, but not locked yet.");
         return;
     }
 
@@ -754,11 +568,6 @@ void CHyprlock::repeatKey(xkb_keysym_t sym) {
 void CHyprlock::onKey(uint32_t key, bool down) {
     if (isUnlocked())
         return;
-
-    if (down && std::chrono::system_clock::now() < m_tGraceEnds) {
-        unlock();
-        return;
-    }
 
     if (down && std::ranges::find(m_vPressedKeys, key) != m_vPressedKeys.end()) {
         Log::logger->log(Log::ERR, "Invalid key down event (key already pressed?)");
@@ -1161,10 +970,6 @@ void CHyprlock::enqueueForceUpdateTimers() {
             }
         },
         nullptr, false);
-}
-
-SP<CCZwlrScreencopyManagerV1> CHyprlock::getScreencopy() {
-    return m_sWaylandState.screencopy;
 }
 
 SP<CCWlShm> CHyprlock::getShm() {

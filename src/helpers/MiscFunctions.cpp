@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <fcntl.h>
 #include <filesystem>
 #include <hyprlang.hpp>
 #include <hyprutils/os/Process.hpp>
@@ -107,42 +106,6 @@ int64_t configStringToInt(const std::string& VALUE) {
     } catch (std::exception& e) { throw std::invalid_argument(std::string{"stoll threw: "} + e.what()); }
 
     return 0;
-}
-
-int createPoolFile(size_t size, std::string& name) {
-    const auto XDGRUNTIMEDIR = getenv("XDG_RUNTIME_DIR");
-    if (!XDGRUNTIMEDIR) {
-        Log::logger->log(Log::CRIT, "XDG_RUNTIME_DIR not set!");
-        return -1;
-    }
-
-    name = std::string(XDGRUNTIMEDIR) + "/.hyprlogin_sc_XXXXXX";
-
-    const auto FD = mkstemp((char*)name.c_str());
-    if (FD < 0) {
-        Log::logger->log(Log::CRIT, "createPoolFile: fd < 0");
-        return -1;
-    }
-    // set cloexec
-    long flags = fcntl(FD, F_GETFD);
-    if (flags == -1) {
-        close(FD);
-        return -1;
-    }
-
-    if (fcntl(FD, F_SETFD, flags | FD_CLOEXEC) == -1) {
-        close(FD);
-        Log::logger->log(Log::CRIT, "createPoolFile: fcntl < 0");
-        return -1;
-    }
-
-    if (ftruncate(FD, size) < 0) {
-        close(FD);
-        Log::logger->log(Log::CRIT, "createPoolFile: ftruncate < 0");
-        return -1;
-    }
-
-    return FD;
 }
 
 std::string spawnSync(const std::string& cmd) {

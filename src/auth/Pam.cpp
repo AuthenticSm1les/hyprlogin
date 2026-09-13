@@ -12,6 +12,7 @@
 #endif
 
 #include <cstring>
+#include <cstdlib>
 #include <thread>
 
 int conv(int num_msg, const struct pam_message** msg, struct pam_response** resp, void* appdata_ptr) {
@@ -19,40 +20,55 @@ int conv(int num_msg, const struct pam_message** msg, struct pam_response** resp
     struct pam_response* pamReply          = (struct pam_response*)calloc(num_msg, sizeof(struct pam_response));
     bool                 initialPrompt     = true;
 
+    *resp = nullptr;
+
+    if (!pamReply)
+        return PAM_BUF_ERR;
+
+    const auto abortConversation = [&]() {
+        for (int i = 0; i < num_msg; ++i)
+            free(pamReply[i].resp);
+        free(pamReply);
+        return PAM_CONV_ERR;
+    };
+
     for (int i = 0; i < num_msg; ++i) {
         switch (msg[i]->msg_style) {
             case PAM_PROMPT_ECHO_OFF:
             case PAM_PROMPT_ECHO_ON: {
                 const auto PROMPT        = std::string(msg[i]->msg);
                 const auto PROMPTCHANGED = PROMPT != CONVERSATIONSTATE->prompt;
-                Log::logger->log(Log::INFO, "PAM_PROMPT: {}", PROMPT);
-
-                if (PROMPTCHANGED)
-                    g_pHyprlock->enqueueForceUpdateTimers();
+                Log::logger->log(Log::INFO, "PAMPROMPT: {}", PROMPT);
 
                 // Some pam configurations ask for the password twice for whatever reason (Fedora su for example)
                 // When the prompt is the same as the last one, I guess our answer can be the same.
-                if (!initialPrompt && PROMPTCHANGED) {
+                if (initialPrompt || PROMPTCHANGED) {
                     CONVERSATIONSTATE->prompt = PROMPT;
+                    g_pHyprlock->enqueueForceUpdateTimers();
+
                     CONVERSATIONSTATE->waitForInput();
                 }
 
-                // Needed for unlocks via SIGUSR1
-                if (g_pHyprlock->isUnlocked())
-                    return PAM_CONV_ERR;
+                // Needed for early termination
+                if (CONVERSATIONSTATE->terminateRequested || g_pHyprlock->m_bTerminate)
+                    return abortConversation();
 
                 pamReply[i].resp = strdup(CONVERSATIONSTATE->input.c_str());
                 initialPrompt    = false;
             } break;
             case PAM_ERROR_MSG: Log::logger->log(Log::ERR, "PAM: {}", msg[i]->msg); break;
-            case PAM_TEXT_INFO:
+            case PAM_TEXT_INFO: {
                 Log::logger->log(Log::INFO, "PAM: {}", msg[i]->msg);
+                const auto MSG = std::string_view(msg[i]->msg);
                 // Targets this log from pam_faillock: https://github.com/linux-pam/linux-pam/blob/fa3295e079dbbc241906f29bde5fb71bc4172771/modules/pam_faillock/pam_faillock.c#L417
-                if (const auto MSG = std::string(msg[i]->msg); MSG.contains("left to unlock")) {
+                if (MSG.contains("left to unlock")) {
                     CONVERSATIONSTATE->failText        = MSG;
                     CONVERSATIONSTATE->failTextFromPam = true;
-                }
-                break;
+                // This log targets the pam_fprintd.so module (Just so $PAMPROMPT reflects what is going on)
+                // Removing this module and instead using `auth:fingerprint:enabled = true` is adviced.
+                } else if (MSG.contains("Place your finger"))
+                    CONVERSATIONSTATE->prompt = MSG;
+            } break;
         }
     }
 
@@ -75,7 +91,7 @@ CPam::CPam() {
 }
 
 CPam::~CPam() {
-    ;
+    terminate();
 }
 
 void CPam::init() {
@@ -83,18 +99,14 @@ void CPam::init() {
         while (true) {
             resetConversation();
 
-            // Initial input
-            m_sConversationState.prompt = "Password: ";
-            waitForInput();
-
-            // For grace or SIGUSR1 unlocks
-            if (g_pHyprlock->isUnlocked())
+            // For early termination
+            if (m_sConversationState.terminateRequested || g_pHyprlock->m_bTerminate)
                 return;
 
             const auto AUTHENTICATED = auth();
 
-            // For SIGUSR1 unlocks
-            if (g_pHyprlock->isUnlocked())
+            // For early termination
+            if (m_sConversationState.terminateRequested || g_pHyprlock->m_bTerminate)
                 return;
 
             if (!AUTHENTICATED)
@@ -148,7 +160,7 @@ void CPam::waitForInput() {
     m_bBlockInput                          = false;
     m_sConversationState.waitingForPamAuth = false;
     m_sConversationState.inputRequested    = true;
-    m_sConversationState.inputSubmittedCondition.wait(lk, [this] { return !m_sConversationState.inputRequested || g_pHyprlock->m_bTerminate; });
+    m_sConversationState.inputSubmittedCondition.wait(lk, [this] { return !m_sConversationState.inputRequested || m_sConversationState.terminateRequested || g_pHyprlock->m_bTerminate; });
     m_bBlockInput = true;
 }
 
@@ -177,6 +189,11 @@ bool CPam::checkWaiting() {
 }
 
 void CPam::terminate() {
+    {
+        std::lock_guard<std::mutex> lg(m_sConversationState.inputMutex);
+        m_sConversationState.terminateRequested = true;
+    }
+
     m_sConversationState.inputSubmittedCondition.notify_all();
     if (m_thread.joinable())
         m_thread.join();
@@ -187,4 +204,5 @@ void CPam::resetConversation() {
     m_sConversationState.waitingForPamAuth = false;
     m_sConversationState.inputRequested    = false;
     m_sConversationState.failTextFromPam   = false;
+    m_bBlockInput = false;
 }

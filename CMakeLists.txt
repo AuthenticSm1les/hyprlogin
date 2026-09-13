@@ -108,7 +108,6 @@ pkg_check_modules(
   cairo
   pangocairo
   libdrm
-  gbm
   hyprutils>=0.11.0
   sdbus-c++>=2.0.0
   hyprgraphics>=0.1.6)
@@ -116,11 +115,16 @@ find_library(PAM_FOUND NAMES pam libpam)
 if(PAM_FOUND)
   set(PAM_LIB ${PAM_FOUND})
 else()
-  pkg_check_modules(PAM IMPORTED_TARGET pam libpam)
+  pkg_check_modules(PAM IMPORTED_TARGET libpam)
   if(PAM_FOUND)
     set(PAM_LIB PkgConfig::PAM)
   else()
-    message(FATAL_ERROR "The required library libpam was not found.")
+    pkg_check_modules(PAM IMPORTED_TARGET pam)
+      if(PAM_FOUND)
+        set(PAM_LIB PkgConfig::PAM)
+      else()
+        message(FATAL_ERROR "The required library libpam was not found.")
+      endif()
   endif()
 endif()
 
@@ -170,9 +174,7 @@ make_directory(${CMAKE_SOURCE_DIR}/protocols) # we don't ship any custom ones so
 
 protocolwayland()
 
-protocolnew("protocols" "wlr-screencopy-unstable-v1" true)
 protocolnew("staging/ext-session-lock" "ext-session-lock-v1" false)
-protocolnew("stable/linux-dmabuf" "linux-dmabuf-v1" false)
 protocolnew("staging/fractional-scale" "fractional-scale-v1" false)
 protocolnew("stable/viewporter" "viewporter" false)
 protocolnew("staging/cursor-shape" "cursor-shape-v1" false)

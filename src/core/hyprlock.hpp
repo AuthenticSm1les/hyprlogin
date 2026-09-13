@@ -4,26 +4,17 @@
 #include "wayland.hpp"
 #include "ext-session-lock-v1.hpp"
 #include "fractional-scale-v1.hpp"
-#include "wlr-screencopy-unstable-v1.hpp"
-#include "linux-dmabuf-v1.hpp"
 #include "viewporter.hpp"
 #include "Output.hpp"
 #include "Timer.hpp"
 #include <vector>
+#include <atomic>
 #include <condition_variable>
 #include <optional>
 #include <string_view>
 
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-compose.h>
-
-#include <gbm.h>
-#include <xf86drm.h>
-
-struct SDMABUFModifier {
-    uint32_t fourcc = 0;
-    uint64_t mod    = 0;
-};
 
 struct SGreeterSession {
     std::string name;
@@ -35,7 +26,7 @@ struct SGreeterSession {
 
 class CHyprlock {
   public:
-    CHyprlock(std::string_view wlDisplay, const bool immediateRender, const int gracePeriod);
+    CHyprlock(std::string_view wlDisplay, const bool immediateRender);
     ~CHyprlock();
 
     void                       run();
@@ -60,7 +51,6 @@ class CHyprlock {
     void                       startKeyRepeat(xkb_keysym_t sym);
     void                       repeatKey(xkb_keysym_t sym);
     void                       handleKeySym(xkb_keysym_t sym, bool compose);
-    void                       onPasswordCheckTimer();
     void                       clearPasswordBuffer();
     const std::string&         getInputBuffer();
     void                       setInputBuffer(const std::string& input);
@@ -88,7 +78,6 @@ class CHyprlock {
     SP<CCWlCompositor>               getCompositor();
     SP<CCWpFractionalScaleManagerV1> getFractionalMgr();
     SP<CCWpViewporter>               getViewporter();
-    SP<CCZwlrScreencopyManagerV1>    getScreencopy();
     SP<CCWlShm>                      getShm();
 
     int32_t                          m_iKeebRepeatRate  = 25;
@@ -96,7 +85,7 @@ class CHyprlock {
 
     xkb_layout_index_t               m_uiActiveLayout = 0;
 
-    bool                             m_bTerminate = false;
+    std::atomic_bool                 m_bTerminate = false;
 
     bool                             m_lockAquired = false;
     bool                             m_bLocked     = false;
@@ -110,10 +99,7 @@ class CHyprlock {
 
     std::string                      m_sCurrentDesktop = "";
 
-    //
-    std::chrono::system_clock::time_point m_tGraceEnds;
-    Vector2D                              m_vLastEnterCoords = {};
-    WP<COutput>                           m_focusedOutput;
+    WP<COutput>                      m_focusedOutput;
 
     Vector2D                              m_vMouseLocation = {};
 
@@ -121,24 +107,6 @@ class CHyprlock {
 
     std::vector<SP<COutput>>              m_vOutputs;
     std::vector<ASP<CTimer>>              getTimers();
-
-    struct {
-        SP<CCZwpLinuxDmabufV1>         linuxDmabuf         = nullptr;
-        SP<CCZwpLinuxDmabufFeedbackV1> linuxDmabufFeedback = nullptr;
-
-        gbm_bo*                        gbm       = nullptr;
-        gbm_device*                    gbmDevice = nullptr;
-
-        void*                          formatTable     = nullptr;
-        size_t                         formatTableSize = 0;
-        bool                           deviceUsed      = false;
-
-        std::vector<SDMABUFModifier>   dmabufMods;
-    } dma;
-    gbm_device* createGBMDevice(drmDevice* dev);
-
-    void        addDmabufListener();
-    void        removeDmabufListener();
 
   private:
     struct {
@@ -148,7 +116,6 @@ class CHyprlock {
         SP<CCWlCompositor>               compositor  = nullptr;
         SP<CCWpFractionalScaleManagerV1> fractional  = nullptr;
         SP<CCWpViewporter>               viewporter  = nullptr;
-        SP<CCZwlrScreencopyManagerV1>    screencopy  = nullptr;
         SP<CCWlShm>                      shm         = nullptr;
     } m_sWaylandState;
 

@@ -2,7 +2,6 @@
 
 #include "../defines.hpp"
 #include "./Texture.hpp"
-#include "./Screencopy.hpp"
 #include "./widgets/IWidget.hpp"
 
 #include <hyprgraphics/resource/AsyncResourceGatherer.hpp>
@@ -31,7 +30,6 @@ class CAsyncResourceManager {
     static ResourceID resourceIDForTextCmdRequest(const CTextResource::STextResourceData& s, size_t revision);
     // Image paths may be file system links, thus this function supports a revision parameter that gets factored into the resource id.
     static ResourceID resourceIDForImageRequest(const std::string& path, size_t revision);
-    static ResourceID resourceIDForScreencopy(const std::string& port);
 
     struct SPreloadedTexture {
         ASP<CTexture> texture;
@@ -51,8 +49,6 @@ class CAsyncResourceManager {
     void          unload(ASP<CTexture> resource);
 
     void          enqueueStaticAssets();
-    void          enqueueScreencopyFrames();
-    void          screencopyToTexture(const CScreencopyFrame& scFrame);
     void          gatherInitialResources(wl_display* display);
 
     bool          checkIdPresent(ResourceID id);
@@ -75,7 +71,6 @@ class CAsyncResourceManager {
 
     // not shared between threads
     std::unordered_map<ResourceID, SPreloadedTexture> m_assets;
-    std::vector<UP<CScreencopyFrame>>                 m_scFrames;
     // shared between threads
     std::mutex                                                                                              m_resourcesMutex;
     std::unordered_map<ResourceID, std::pair<ASP<Hyprgraphics::IAsyncResource>, std::vector<AWP<IWidget>>>> m_resources;
