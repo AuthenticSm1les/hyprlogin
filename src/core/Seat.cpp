@@ -36,14 +36,6 @@ void CSeatManager::registerSeat(SP<CCWlSeat> seat) {
 
                 if (!*HIDECURSOR)
                     g_pHyprlock->onHover(g_pHyprlock->m_vMouseLocation);
-
-                if (std::chrono::system_clock::now() > g_pHyprlock->m_tGraceEnds)
-                    return;
-
-                if (!g_pHyprlock->isUnlocked() && g_pHyprlock->m_vLastEnterCoords.distance({wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y)}) > 5) {
-                    Log::logger->log(Log::INFO, "In grace and cursor moved more than 5px, unlocking!");
-                    g_pHyprlock->unlock();
-                }
             });
 
             m_pPointer->setEnter([this](CCWlPointer* r, uint32_t serial, wl_proxy* surf, wl_fixed_t surface_x, wl_fixed_t surface_y) {
@@ -56,8 +48,6 @@ void CSeatManager::registerSeat(SP<CCWlSeat> seat) {
                     m_pCursorShape->hideCursor();
                 else
                     m_pCursorShape->setShape(wpCursorShapeDeviceV1Shape::WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
-
-                g_pHyprlock->m_vLastEnterCoords = {wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y)};
 
                 if (*HIDECURSOR)
                     return;

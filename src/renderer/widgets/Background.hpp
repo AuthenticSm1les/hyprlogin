@@ -30,14 +30,12 @@ class CBackground : public IWidget {
 
     void            updatePrimaryAsset();
     void            updatePendingAsset();
-    void            updateScAsset();
 
     const CTexture& getPrimaryAssetTex() const;
     const CTexture& getPendingAssetTex() const;
-    const CTexture& getScAssetTex() const;
 
     void            renderRect(CHyprColor color);
-    void            renderToFB(const CTexture& text, CFramebuffer& fb, int passes, bool applyTransform = false);
+    void            renderToFB(const CTexture& text, CFramebuffer& fb, int passes);
 
     void            onReloadTimerUpdate();
     void            plantReloadTimer();
@@ -49,7 +47,6 @@ class CBackground : public IWidget {
     // if needed
     UP<CFramebuffer>                blurredFB;
     UP<CFramebuffer>                pendingBlurredFB;
-    UP<CFramebuffer>                transformedScFB;
 
     int                             blurSize          = 10;
     int                             blurPasses        = 3;
@@ -65,16 +62,13 @@ class CBackground : public IWidget {
     Hyprutils::Math::eTransform     transform;
 
     ResourceID                      resourceID      = 0;
-    ResourceID                      scResourceID    = 0;
     bool                            pendingResource = false;
 
     PHLANIMVAR<float>               crossFadeProgress;
 
     CHyprColor                      color;
     ASP<CTexture>                   asset        = nullptr;
-    ASP<CTexture>                   scAsset      = nullptr;
     ASP<CTexture>                   pendingAsset = nullptr;
-    bool                            isScreenshot = false;
     bool                            firstRender  = true;
 
     int                             reloadTime = -1;

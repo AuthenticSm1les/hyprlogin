@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <functional>
 #include <thread>
+#include <atomic>
 
 class CPam : public IAuthImplementation {
   public:
@@ -22,6 +23,7 @@ class CPam : public IAuthImplementation {
         bool                    waitingForPamAuth = false;
         bool                    inputRequested    = false;
         bool                    failTextFromPam   = false;
+        std::atomic_bool        terminateRequested = false;
         std::function<void()>   waitForInput      = []() {};
     };
 

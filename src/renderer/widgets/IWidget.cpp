@@ -5,7 +5,6 @@
 #include <chrono>
 #include <hyprgraphics/resource/resources/TextResource.hpp>
 #include <unistd.h>
-#include <pwd.h>
 #include <hyprutils/string/String.hpp>
 #include <hyprutils/string/VarList.hpp>
 
@@ -186,19 +185,7 @@ static std::string getTime12h() {
 IWidget::SFormatResult IWidget::formatString(std::string in) {
     Log::logger->debug("formatString: input='{}'", in);
 
-    auto  uidPassword = getpwuid(getuid());
-    char* username    = uidPassword ? uidPassword->pw_name : nullptr;
-    char* user_gecos  = uidPassword ? uidPassword->pw_gecos : nullptr;
-
-    if (!username)
-        Log::logger->log(Log::ERR, "Error in formatString, username null. Errno: ", errno);
-
-    if (!user_gecos)
-        Log::logger->log(Log::WARN, "Error in formatString, user_gecos null. Errno: ", errno);
-
     IWidget::SFormatResult result;
-    replaceInString(in, "$DESC", std::string{user_gecos ? user_gecos : ""});
-    replaceInString(in, "$USER", std::string{username ? username : ""});
     if (in.contains("$GREETD_USER")) {
         Log::logger->debug("formatString: found $GREETD_USER, targetUsername='{}'", g_pHyprlock->getTargetUsername());
         if (g_pHyprlock->getTargetUsername().empty())

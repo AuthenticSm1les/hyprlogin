@@ -108,7 +108,6 @@ pkg_check_modules(
   cairo
   pangocairo
   libdrm
-  gbm
   hyprutils>=0.11.0
   sdbus-c++>=2.0.0
   hyprgraphics>=0.1.6)
@@ -175,9 +174,7 @@ make_directory(${CMAKE_SOURCE_DIR}/protocols) # we don't ship any custom ones so
 
 protocolwayland()
 
-protocolnew("protocols" "wlr-screencopy-unstable-v1" true)
 protocolnew("staging/ext-session-lock" "ext-session-lock-v1" false)
-protocolnew("stable/linux-dmabuf" "linux-dmabuf-v1" false)
 protocolnew("staging/fractional-scale" "fractional-scale-v1" false)
 protocolnew("stable/viewporter" "viewporter" false)
 protocolnew("staging/cursor-shape" "cursor-shape-v1" false)

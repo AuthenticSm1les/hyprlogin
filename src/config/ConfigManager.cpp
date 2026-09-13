@@ -250,7 +250,6 @@ void CConfigManager::init() {
     m_config.addConfigValue("general:immediate_render", Hyprlang::INT{0});
     m_config.addConfigValue("general:exit_command", Hyprlang::STRING{"hyprctl dispatch exit"});
     m_config.addConfigValue("general:fractional_scaling", Hyprlang::INT{2});
-    m_config.addConfigValue("general:screencopy_mode", Hyprlang::INT{0});
     m_config.addConfigValue("general:fail_timeout", Hyprlang::INT{4000});
     m_config.addConfigValue("general:debug_mode", Hyprlang::INT{0});
     m_config.addConfigValue("general:debug_log_path", Hyprlang::STRING{"/tmp/hyprlogin-debug.log"});

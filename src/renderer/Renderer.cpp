@@ -1,6 +1,5 @@
 #include "Renderer.hpp"
 #include "Shaders.hpp"
-#include "Screencopy.hpp"
 #include "../config/ConfigManager.hpp"
 #include "../core/AnimationManager.hpp"
 #include "../core/Egl.hpp"
