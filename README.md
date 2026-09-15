@@ -104,6 +104,11 @@ Config resolution:
 - otherwise `hyprlogin` first looks for `/etc/hyprlogin/hyprlogin.conf`
 - if that file does not exist, it falls back to `/usr/share/hyprlogin/examples/hyprlogin.conf`
 
+Note: the greeter runs as the `greeter` user (uid 968), so config files and
+wallpapers must be readable by that user — files under a mode-`700` home
+directory are not, and the background then falls back to its configured color
+(with a warning in the log).
+
 Config compatibility:
 
 - the config grammar stays aligned with `hyprlock`
