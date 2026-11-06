@@ -250,8 +250,8 @@ void CHyprlock::run() {
     if (!acquireSessionLock()) {
         m_sLoopState.timerEvent = true;
         m_sLoopState.timerCV.notify_all();
-         g_pAuth->terminate();
-         exit(1);
+        g_pAuth->terminate();
+        exit(1);
      }
 
     registerSignalAction(SIGUSR2, handleForceUpdateSignal);
@@ -508,8 +508,14 @@ std::vector<std::string> CHyprlock::getSelectedSessionEnv() {
     auto desktopFilePath = std::filesystem::path(session.desktopFile).filename();
     desktopFilePath.replace_extension("");
     env.emplace_back(std::format("DESKTOP_SESSION={}", desktopFilePath.string()));
-    if (!session.desktopNames.empty())
+    if (!session.desktopNames.empty()) {
+        std::string desktopNamesColon = session.desktopNames;
+        std::replace(desktopNamesColon.begin(), desktopNamesColon.end(), ';', ':');
+
+        if (!desktopNamesColon.empty() && desktopNamesColon.back() == ':')
+            desktopNamesColon.pop_back();
         env.emplace_back(std::format("XDG_CURRENT_DESKTOP={}", session.desktopNames));
+    }
 
     return env;
 }
