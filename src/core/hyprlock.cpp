@@ -514,7 +514,7 @@ std::vector<std::string> CHyprlock::getSelectedSessionEnv() {
 
         if (!desktopNamesColon.empty() && desktopNamesColon.back() == ':')
             desktopNamesColon.pop_back();
-        env.emplace_back(std::format("XDG_CURRENT_DESKTOP={}", session.desktopNames));
+        env.emplace_back(std::format("XDG_CURRENT_DESKTOP={}", desktopNamesColon));
     }
 
     return env;
