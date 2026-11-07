@@ -2,7 +2,7 @@
 -- https://wiki.hypr.land/Configuring/Start/
 
 hl.on("hyprland.start", function()
-    hl.exec_cmd("hyprlogin --verbose")
+    hl.exec_cmd("hyprlogin")
 end)
 
 hl.monitor({

@@ -4,9 +4,6 @@ A GPU-accelerated graphical greeter for [greetd](https://sr.ht/~kennylevinsen/gr
 
 hyprlogin is a fork of [hyprlock](https://github.com/hyprwm/hyprlock), repurposed from a screen locker into a login screen. It runs inside a minimal Hyprland session started by greetd, authenticates over the greetd IPC protocol, and launches the session you pick.
 
-> [!NOTE]
-> hyprlogin is a work in progress. It is usable day to day, but expect rough edges and verbose logging.
-
 ![hyprlogin screenshot](https://i.ibb.co/8Bd98BP/20240220-00h12m46s.png)
 
 ## Features
@@ -31,7 +28,17 @@ hyprlogin is a fork of [hyprlock](https://github.com/hyprwm/hyprlock), repurpose
 
 ```sh
 sudo pacman -S --needed greetd hyprland
-paru -S hyprlogin-git
+paru -S hyprlogin       # latest release
+paru -S hyprlogin-git   # or: latest commit
+```
+
+### Prebuilt binary
+
+Each [release](https://github.com/AuthenticSm1les/hyprlogin/releases) has an x86_64 tarball built on Arch Linux. It needs the runtime libraries from the [build dependencies](#from-source) (hyprlang, hyprutils, hyprgraphics, cairo, pango, …) at the versions Arch ships:
+
+```sh
+sudo tar -xzf hyprlogin-<version>-x86_64.tar.gz -C /
+sudo systemd-tmpfiles --create hyprlogin.conf
 ```
 
 ### NixOS (flake)

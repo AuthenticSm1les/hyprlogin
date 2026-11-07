@@ -91,6 +91,7 @@ label refresh, which nothing sends to a greeter.
 
 ```sh
 git remote add upstream https://github.com/hyprwm/hyprlock.git   # once
+git config remote.upstream.tagOpt --no-tags                       # once: hyprlock tags clash with ours
 git config rerere.enabled true                                    # once
 scripts/upstream-status.sh
 ```

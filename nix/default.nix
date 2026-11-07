@@ -31,7 +31,7 @@ stdenv.mkDerivation {
     substituteInPlace assets/greetd-config.toml \
       --replace-fail "/usr/share/hyprlogin" "$out/share/hyprlogin"
     substituteInPlace assets/hyprland-greeter.lua \
-      --replace-fail '"hyprlogin ' "\"$out/bin/hyprlogin "
+      --replace-fail '"hyprlogin"' "\"$out/bin/hyprlogin\""
   '';
 
   nativeBuildInputs = [
