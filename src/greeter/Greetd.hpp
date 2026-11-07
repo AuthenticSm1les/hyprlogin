@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Auth.hpp"
+#include "../auth/Auth.hpp"
 
 #include <atomic>
 #include <condition_variable>

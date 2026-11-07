@@ -5,6 +5,7 @@
 #include "../../core/hyprlock.hpp"
 #include "../../helpers/Color.hpp"
 #include "../../helpers/MiscFunctions.hpp"
+#include "../../greeter/Greeter.hpp"
 #include "../../config/ConfigDataValues.hpp"
 #include "src/defines.hpp"
 #include <hyprlang.hpp>
@@ -220,7 +221,7 @@ CBox CLabel::getBoundingBoxWl() const {
 
 void CLabel::onClick(uint32_t button, bool down, const Vector2D& pos) {
     if (down && !onclickCommand.empty()) {
-        if (handleInternalCommand(onclickCommand))
+        if (g_pGreeter->handleInternalCommand(onclickCommand)) // hyprlogin
             return;
         spawnAsync(onclickCommand);
     }

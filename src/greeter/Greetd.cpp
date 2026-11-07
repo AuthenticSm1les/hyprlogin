@@ -2,6 +2,7 @@
 
 #include "../config/ConfigManager.hpp"
 #include "../core/hyprlock.hpp"
+#include "Greeter.hpp"
 #include "../helpers/Log.hpp"
 
 #include <algorithm>
@@ -50,7 +51,7 @@ static void applyGreetdFailResetOnMainThread(ASP<CTimer> self, void* data) {
     if (!payload)
         return;
 
-    g_pHyprlock->setGreeterUIState(payload->prompt, payload->secretInput, payload->username);
+    g_pGreeter->setUIState(payload->prompt, payload->secretInput, payload->username);
     g_pHyprlock->setInputBuffer(payload->inputBuffer);
     g_pAuth->enqueueFail(payload->failText, AUTH_IMPL_GREETD);
 }
@@ -60,12 +61,11 @@ static void applyGreetdPromptOnMainThread(ASP<CTimer> self, void* data) {
     if (!payload)
         return;
 
-    g_pHyprlock->setGreeterPrompt(payload->prompt, payload->secretInput);
+    g_pGreeter->setPrompt(payload->prompt, payload->secretInput);
 }
 
 void CGreetd::init() {
     const auto* sockPath = getenv("GREETD_SOCK");
-    static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
     if (!sockPath || std::string_view(sockPath).empty()) {
         setUnavailable("Run hyprlogin from greetd");
         Log::logger->log(Log::ERR, "GREETD_SOCK not set");
@@ -74,9 +74,9 @@ void CGreetd::init() {
 
     Log::logger->debug("init: GREETD_SOCK available at '{}'", sockPath);
 
-    if (const std::string_view defaultUser = *DEFAULTUSER; !defaultUser.empty()) {
-        m_username = std::string{defaultUser};
-        g_pHyprlock->setTargetUsername(m_username);
+    if (const auto& defaultUser = g_pGreeter->getDefaultUser(); !defaultUser.empty()) {
+        m_username = defaultUser;
+        g_pGreeter->setTargetUsername(m_username);
         g_pHyprlock->setInputBuffer("");
         Log::logger->debug("init: default user '{}' selected, starting auth conversation", m_username);
         startConversation();
@@ -88,9 +88,9 @@ void CGreetd::init() {
 }
 
 void CGreetd::handleInput(const std::string& input) {
-    if (g_pHyprlock->getTargetUsername().empty()) {
+    if (g_pGreeter->getTargetUsername().empty()) {
         m_username = input;
-        g_pHyprlock->setTargetUsername(input);
+        g_pGreeter->setTargetUsername(input);
         Log::logger->debug("handleInput: captured username '{}', starting auth conversation", input);
         g_pHyprlock->setInputBuffer("");
         startConversation();
@@ -184,7 +184,7 @@ void CGreetd::setPrompt(const std::string& prompt, bool secret) {
         m_waitingForServer = false;
     }
 
-    g_pHyprlock->setGreeterPrompt(resolvedPrompt, secret);
+    g_pGreeter->setPrompt(resolvedPrompt, secret);
 }
 
 void CGreetd::requestPrompt(const std::string& prompt, bool secret) {
@@ -214,8 +214,8 @@ void CGreetd::setUnavailable(const std::string& reason) {
         m_username.clear();
     }
 
-    g_pHyprlock->setGreeterPrompt(reason, false);
-    g_pHyprlock->clearTargetUsername();
+    g_pGreeter->setPrompt(reason, false);
+    g_pGreeter->clearTargetUsername();
 }
 
 void CGreetd::startConversation() {
@@ -232,8 +232,8 @@ void CGreetd::startConversation() {
         m_waitingForUser    = false;
     }
 
-    g_pHyprlock->setGreeterPrompt("Validating...", true);
-    Log::logger->debug("startConversation: spawning worker for '{}'", g_pHyprlock->getTargetUsername());
+    g_pGreeter->setPrompt("Validating...", true);
+    Log::logger->debug("startConversation: spawning worker for '{}'", g_pGreeter->getTargetUsername());
     m_worker = std::thread([this]() { this->runConversationThread(); });
 }
 
@@ -277,7 +277,7 @@ void CGreetd::runConversation() {
         return;
     }
 
-    const auto USERNAME = g_pHyprlock->getTargetUsername();
+    const auto USERNAME = g_pGreeter->getTargetUsername();
     Log::logger->debug("runConversation: create_session for '{}'", USERNAME);
     auto response = createSession(USERNAME);
     Log::logger->debug("create_session: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", responseTypeName(response.type),
@@ -367,7 +367,7 @@ void CGreetd::handleResponse(const SResponse& response) {
                        (int)response.authType, response.errorType, response.description, response.authMessage);
     switch (response.type) {
         case EResponseType::SUCCESS: {
-            const auto SESSION = g_pHyprlock->getSelectedSessionCommand();
+            const auto SESSION = g_pGreeter->getSelectedSessionCommand();
             if (SESSION.empty()) {
                 failAndReset("No session selected", true);
                 return;
@@ -379,8 +379,8 @@ void CGreetd::handleResponse(const SResponse& response) {
             }
 
             dispatchPromptToMainThread("Starting session", true);
-            Log::logger->debug("handleResponse: start_session cmd='{}' env_count={}", SESSION, g_pHyprlock->getSelectedSessionEnv().size());
-            const auto START = startSession(SESSION, g_pHyprlock->getSelectedSessionEnv());
+            Log::logger->debug("handleResponse: start_session cmd='{}' env_count={}", SESSION, g_pGreeter->getSelectedSessionEnv().size());
+            const auto START = startSession(SESSION, g_pGreeter->getSelectedSessionEnv());
             Log::logger->debug("start_session: type={} auth_type={} error_type='{}' description='{}' auth_message='{}'", responseTypeName(START.type),
                                (int)START.authType, START.errorType, START.description, START.authMessage);
             if (START.type != EResponseType::SUCCESS) {
@@ -388,6 +388,7 @@ void CGreetd::handleResponse(const SResponse& response) {
                 return;
             }
 
+            g_pGreeter->rememberLogin(m_username);
             g_pAuth->enqueueUnlock();
             Log::logger->debug("handleResponse: enqueueUnlock called, worker thread exiting normally");
             return;
@@ -436,9 +437,8 @@ std::string CGreetd::normalizeFailText(const std::string& failText) const {
 }
 
 void CGreetd::failAndReset(const std::string& failText, bool cancelSessionRequest, bool repromptUsername, bool cooldown) {
-    static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
     const auto        normalizedFailText = normalizeFailText(failText);
-    const auto        defaultUser        = std::string{std::string_view{*DEFAULTUSER}};
+    const auto        defaultUser        = g_pGreeter->getDefaultUser();
     const auto        preservedUser      = m_username.empty() ? defaultUser : m_username;
     const bool        effectiveRepromptUsername = repromptUsername && defaultUser.empty();
 

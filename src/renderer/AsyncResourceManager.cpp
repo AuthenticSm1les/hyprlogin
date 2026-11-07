@@ -164,10 +164,6 @@ void CAsyncResourceManager::gatherInitialResources(wl_display* display) {
                      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - STARTGATHERTP).count());
 }
 
-bool CAsyncResourceManager::checkIdPresent(ResourceID id) {
-    return m_assets.contains(id);
-}
-
 void CAsyncResourceManager::unload(ASP<CTexture> texture) {
     auto preload = std::ranges::find_if(m_assets, [texture](const auto& a) { return a.second.texture == texture; });
     if (preload == m_assets.end())
