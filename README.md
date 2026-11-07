@@ -226,7 +226,7 @@ To go back to your previous display manager, restore `/etc/greetd/config.toml.ba
 
 Bug reports and pull requests are welcome. When reporting an issue, include the output from `debug_mode` and `journalctl -b -u greetd`.
 
-When porting changes from upstream hyprlock, read [HYPRLOCK-DIVERGENCE.md](HYPRLOCK-DIVERGENCE.md) first. Some subsystems have been removed on purpose and should not come back. Keep the config format compatible with hyprlock.
+hyprlogin-specific code lives in `src/greeter/`; the rest of `src/` is hyprlock and only gets small hooks marked `// hyprlogin`. `scripts/upstream-status.sh` lists upstream hyprlock commits that are not ported yet. Read [HYPRLOCK-DIVERGENCE.md](HYPRLOCK-DIVERGENCE.md) before porting: some subsystems have been removed on purpose and should not come back. Keep the config format compatible with hyprlock.
 
 ## License
 
