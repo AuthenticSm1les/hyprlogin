@@ -21,6 +21,7 @@ Two rules make that work:
 | `src/greeter/Sessions.*` | `.desktop` session discovery, matching and session environment |
 | `src/greeter/Greetd.*` | greetd IPC auth backend, the only `IAuthImplementation` |
 | `src/greeter/RememberCache.*` | `lastuser` / `lastsession` cache in `/var/cache/hyprlogin` |
+| `src/greeter/Logging.*` | `--debug` / `--log-file` flags and their `HYPRLOGIN_DEBUG` / `HYPRLOGIN_LOG_FILE` environment variables |
 | everything else | hyprlock, minus the removed subsystems below |
 
 ### Hooks in upstream files
@@ -33,7 +34,8 @@ grep -rn '// hyprlogin' src --exclude-dir=greeter
 
 | File | Hook |
 |---|---|
-| `main.cpp` | create `g_pGreeter` and call `init()` after the config is loaded |
+| `main.cpp` | `GreeterLogging::registerArgs` / `setup` before the config is loaded; create `g_pGreeter` and call `init()` after |
+| `helpers/Log.hpp` | `debug()`, `setDebug()`, and `setLogFd()` + `writeLogFile()` (the `--log-file` output, also written with `--quiet`) |
 | `config/ConfigManager.cpp` | `CGreeter::registerConfig(m_config)` before `commence()` |
 | `core/hyprlock.cpp` | `handleKeySym` gives keys to `g_pGreeter->handleKeySym` first; `releaseSessionLock` calls `onSessionLockReleased` |
 | `core/hyprlock.hpp` | `getInputBuffer` / `setInputBuffer` (the buffer holds the username or the password) |

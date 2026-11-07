@@ -3,7 +3,8 @@
 
 #include <format>
 #include <print>
-#include <fstream>
+#include <chrono>
+#include <unistd.h>
 #include <hyprutils/cli/Logger.hpp>
 
 #define RASSERT(expr, reason, ...)                                                                                                                                                 \
@@ -21,33 +22,40 @@ namespace Log {
       public:
         template <typename... Args>
         void log(Hyprutils::CLI::eLogLevel level, std::format_string<Args...> fmt, Args&&... args) {
-            if (m_quiet)
+            if (m_quiet && m_logFd < 0) // hyprlogin: --quiet still writes --log-file
                 return;
 
             if (level == Hyprutils::CLI::LOG_TRACE && !m_verbose)
                 return;
 
-            m_logger.log(level, std::vformat(fmt.get(), std::make_format_args(args...)));
+            const auto msg = std::vformat(fmt.get(), std::make_format_args(args...));
+            writeLogFile(level, msg); // hyprlogin
+
+            if (!m_quiet)
+                m_logger.log(level, msg);
         }
 
+        // hyprlogin: [debug] messages, enabled by --debug (see greeter/Logging.hpp)
         template <typename... Args>
         void debug(std::format_string<Args...> fmt, Args&&... args) {
             if (!m_debugMode)
                 return;
 
-            const auto msg = std::vformat(fmt.get(), std::make_format_args(args...));
-            log(Hyprutils::CLI::LOG_DEBUG, "[debug] {}", msg);
-
-            if (!m_debugFilePath.empty()) {
-                std::ofstream out(m_debugFilePath, std::ios::app);
-                if (out.is_open())
-                    out << "[debug] " << msg << '\n';
-            }
+            log(Hyprutils::CLI::LOG_DEBUG, "[debug] {}", std::vformat(fmt.get(), std::make_format_args(args...)));
         }
 
-        void setDebugMode(bool enable, const std::string& path = {}) {
-            m_debugMode     = enable;
-            m_debugFilePath = path;
+        // hyprlogin
+        void setDebug() {
+            m_debugMode = true;
+            setVerbose();
+        }
+
+        // hyprlogin: takes ownership of an O_APPEND fd (see GreeterLogging::openLogFile).
+        // Lines are written unbuffered so a crash or ASSERT abort doesn't lose them.
+        void setLogFd(int fd) {
+            if (m_logFd >= 0)
+                close(m_logFd);
+            m_logFd = fd;
         }
 
         void setVerbose() {
@@ -67,8 +75,19 @@ namespace Log {
         bool                    m_quiet   = false;
         bool                    m_verbose = false;
 
-        bool                    m_debugMode     = false;
-        std::string             m_debugFilePath;
+        // hyprlogin
+        bool m_debugMode = false;
+        int  m_logFd     = -1;
+
+        void writeLogFile(Hyprutils::CLI::eLogLevel level, const std::string& msg) {
+            if (m_logFd < 0)
+                return;
+
+            static constexpr const char* NAMES[] = {"TRACE", "DEBUG", "WARN", "ERR", "CRIT"};
+            const auto                   now     = std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now());
+            const auto line = std::format("[{:%F %T}] {}: {}\n", now, level <= Hyprutils::CLI::LOG_CRIT ? NAMES[level] : "?", msg);
+            (void)!write(m_logFd, line.data(), line.size());
+        }
 
         Hyprutils::CLI::CLogger m_logger;
     };

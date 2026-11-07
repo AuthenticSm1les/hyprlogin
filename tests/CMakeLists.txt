@@ -55,6 +55,10 @@ add_executable(test_RememberCache test_RememberCache.cpp ../src/greeter/Remember
 target_link_libraries(test_RememberCache PRIVATE GTest::GTest GTest::Main)
 add_test(NAME RememberCache COMMAND test_RememberCache)
 
+add_executable(test_Logging test_Logging.cpp ../src/greeter/Logging.cpp)
+target_link_libraries(test_Logging PRIVATE GTest::GTest GTest::Main PkgConfig::deps)
+add_test(NAME Logging COMMAND test_Logging)
+
 add_executable(test_Sessions test_Sessions.cpp ../src/greeter/Sessions.cpp)
 target_link_libraries(test_Sessions PRIVATE GTest::GTest GTest::Main)
 add_test(NAME Sessions COMMAND test_Sessions)

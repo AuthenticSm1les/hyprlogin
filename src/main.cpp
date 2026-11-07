@@ -4,6 +4,7 @@
 #include "helpers/Log.hpp"
 #include "core/AnimationManager.hpp"
 #include "greeter/Greeter.hpp"
+#include "greeter/Logging.hpp"
 
 #include <string_view>
 #include <csignal>
@@ -36,6 +37,7 @@ int main(int argc, char** argv, char** envp) {
     ASSERT(argParser.registerBoolOption("immediate-render", "", "Draw background immediately (Don't wait for resources)").has_value());
     ASSERT(argParser.registerBoolOption("no-fade-in", "", "Disable the fade-in animation").has_value());
     ASSERT(argParser.registerStringOption("display", "", "Specify the Wayland display to connect to").has_value());
+    GreeterLogging::registerArgs(argParser); // hyprlogin
 
     auto options = argParser.parse();
 
@@ -61,6 +63,8 @@ int main(int argc, char** argv, char** envp) {
     if (quiet)
         Log::logger->setQuiet();
 
+    GreeterLogging::setup(argParser); // hyprlogin
+
     bool immediateRender = argParser.getBool("immediate-render").value_or(false);
     bool noFadeIn        = argParser.getBool("no-fade-in").value_or(false);
 
@@ -82,15 +86,6 @@ int main(int argc, char** argv, char** envp) {
         Log::logger->log(Log::CRIT, "Config threw: {}", ex.what());
         return 1;
     }
-
-    static const auto DEBUGMODE = g_pConfigManager->getValue<Hyprlang::INT>("general:debug_mode");
-    if (*DEBUGMODE && !Log::logger->verbose()) {
-        Log::logger->setVerbose();
-        Log::logger->log(Log::INFO, "general:debug_mode enabled");
-    }
-
-    static const auto DEBUGLOGPATH = g_pConfigManager->getValue<Hyprlang::STRING>("general:debug_log_path");
-    Log::logger->setDebugMode(*DEBUGMODE, std::string{std::string_view{*DEBUGLOGPATH}});
 
     if (noFadeIn)
         g_pConfigManager->m_AnimationTree.setConfigForNode("fadeIn", false, 0.f, "default");

@@ -14,8 +14,6 @@ using namespace Hyprutils::String;
 
 void CGreeter::registerConfig(Hyprlang::CConfig& config) {
     config.addConfigValue("general:exit_command", Hyprlang::STRING{"hyprctl dispatch exit"});
-    config.addConfigValue("general:debug_mode", Hyprlang::INT{0});
-    config.addConfigValue("general:debug_log_path", Hyprlang::STRING{"/tmp/hyprlogin-debug.log"});
 
     config.addConfigValue("sessions:wayland_path", Hyprlang::STRING{"/usr/share/wayland-sessions"});
     config.addConfigValue("sessions:x11_path", Hyprlang::STRING{"/usr/share/xsessions"});

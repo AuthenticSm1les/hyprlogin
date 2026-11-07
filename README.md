@@ -168,7 +168,9 @@ Clicking the session label in the example config also switches sessions.
 ```
 -c, --config <path>   Use a specific config file
 -v, --verbose         Verbose logging
--q, --quiet           Disable logging
+-d, --debug           Greeter debug logging (greetd conversation, sessions), implies --verbose
+    --log-file <path> Also write the log to <path> (created with mode 0600)
+-q, --quiet           Disable logging (with --log-file: log to the file only)
     --no-fade-in      Disable the fade-in animation
     --display <name>  Wayland display to connect to
 -V, --version         Print version and exit
@@ -200,8 +202,6 @@ The config format is identical to hyprlock's, so the [hyprlock wiki](https://wik
 | `sessions:x11_path` | `/usr/share/xsessions` | Where X11 sessions are discovered |
 | `input-field:placeholder_text_username` | `<i>Input Username</i>` | Placeholder shown while asking for the username |
 | `label:hide_when_empty` | `false` | Hide a label whose text resolves to an empty string |
-| `general:debug_mode` | `false` | Verbose startup, greetd and auth logging |
-| `general:debug_log_path` | `/tmp/hyprlogin-debug.log` | File the debug log is appended to |
 
 Extra variables usable in labels:
 
@@ -233,21 +233,24 @@ The greeter runs as the `greeter` user. Config files and wallpapers must be read
 
 ## Troubleshooting
 
-1. Enable debug logging in `/etc/hyprlogin/hyprlogin.conf`:
+1. Enable debug logging. `--debug` and `--log-file` can also be set through the environment, so you don't have to edit `hyprland-greeter.lua`. In `/etc/greetd/config.toml`:
 
-   ```ini
-   general {
-       debug_mode = true
-   }
+   ```toml
+   [default_session]
+   command = "env HYPRLOGIN_DEBUG=1 HYPRLOGIN_LOG_FILE=/var/cache/hyprlogin/debug.log start-hyprland -- --config /usr/share/hyprlogin/hyprland-greeter.lua"
    ```
+
+   The log file must be in a directory the greeter user can write to. `/var/cache/hyprlogin` is one.
 
 2. Reboot (or `sudo systemctl restart greetd` from a TTY) and try to log in.
 3. Read the logs:
 
    ```sh
-   cat /tmp/hyprlogin-debug.log
+   sudo cat /var/cache/hyprlogin/debug.log
    journalctl -b -u greetd
    ```
+
+   Passwords are never logged, but the log does contain usernames and session commands.
 
 Always test from a real greetd session. Running `hyprlogin` from inside an already logged-in desktop will not work, because greetd sets `GREETD_SOCK` only for its greeter.
 
@@ -255,7 +258,7 @@ To go back to your previous display manager, restore `/etc/greetd/config.toml.ba
 
 ## Contributing
 
-Bug reports and pull requests are welcome. When reporting an issue, include the output from `debug_mode` and `journalctl -b -u greetd`.
+Bug reports and pull requests are welcome. When reporting an issue, include the debug log (see Troubleshooting) and `journalctl -b -u greetd`.
 
 hyprlogin-specific code lives in `src/greeter/`; the rest of `src/` is hyprlock and only gets small hooks marked `// hyprlogin`. `scripts/upstream-status.sh` lists upstream hyprlock commits that are not ported yet. Read [HYPRLOCK-DIVERGENCE.md](HYPRLOCK-DIVERGENCE.md) before porting: some subsystems have been removed on purpose and should not come back. Keep the config format compatible with hyprlock.
 
