@@ -7,9 +7,7 @@
 #include "../core/Timer.hpp"
 
 enum eAuthImplementations {
-    AUTH_IMPL_PAM         = 0,
-    AUTH_IMPL_FINGERPRINT = 1,
-    AUTH_IMPL_GREETD      = 2,
+    AUTH_IMPL_GREETD = 2,
 };
 
 class IAuthImplementation {
@@ -38,8 +36,6 @@ class CAuth {
 
     const std::string&         getCurrentFailText();
 
-    std::optional<std::string> getFailText(eAuthImplementations implType);
-    std::optional<std::string> getPrompt(eAuthImplementations implType);
     size_t                     getFailedAttempts();
 
     void                       terminate();
@@ -55,7 +51,7 @@ class CAuth {
   private:
     struct {
         std::string          failText       = "";
-        eAuthImplementations failSource     = AUTH_IMPL_PAM;
+        eAuthImplementations failSource     = AUTH_IMPL_GREETD;
         size_t               failedAttempts = 0;
     } m_sCurrentFail;
 

@@ -233,30 +233,6 @@ IWidget::SFormatResult IWidget::formatString(std::string in) {
         result.allowForceUpdate = true;
     }
 
-    if (in.contains("$PAMFAIL")) {
-        const auto FAIL = g_pAuth->getFailText(AUTH_IMPL_PAM);
-        replaceInString(in, "$PAMFAIL", FAIL.value_or(""));
-        result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$PAMPROMPT")) {
-        const auto PROMPT = g_pAuth->getPrompt(AUTH_IMPL_PAM);
-        replaceInString(in, "$PAMPROMPT", PROMPT.value_or(""));
-        result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$FPRINTFAIL")) {
-        const auto FPRINTFAIL = g_pAuth->getFailText(AUTH_IMPL_FINGERPRINT);
-        replaceInString(in, "$FPRINTFAIL", FPRINTFAIL.value_or(""));
-        result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$FPRINTPROMPT")) {
-        const auto FPRINTPROMPT = g_pAuth->getPrompt(AUTH_IMPL_FINGERPRINT);
-        replaceInString(in, "$FPRINTPROMPT", FPRINTPROMPT.value_or(""));
-        result.allowForceUpdate = true;
-    }
-
     if (in.starts_with("cmd[") && in.contains("]")) {
         // this is a command
         CVarList vars(in.substr(4, in.find_first_of(']') - 4), 0, ',', true);

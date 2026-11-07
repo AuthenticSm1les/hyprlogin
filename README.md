@@ -18,7 +18,7 @@ hyprlogin is a fork of [hyprlock](https://github.com/hyprwm/hyprlock), repurpose
 - hyprlock-compatible config: existing hyprlock themes work unchanged
 - Fully GPU-accelerated, multi-threaded resource loading, fractional scaling
 - Hyprland eye candy: blur, gradients, shadows, animations
-- Optional fingerprint authentication
+- Fingerprint login through greetd's PAM stack (`pam_fprintd`)
 
 ## Requirements
 
@@ -49,8 +49,6 @@ Install the build dependencies (on Arch, these are all in the official repos):
 | mesa | EGL, libdrm |
 | cairo, pango | |
 | libxkbcommon | |
-| sdbus-cpp ≥ 2.0.0 | |
-| pam | |
 
 On distros that split development headers, install the `-dev` / `-devel` variants.
 
@@ -187,6 +185,16 @@ Clickable actions (for `onclick`): `hyprlogin:session_next`, `hyprlogin:session_
 ### Sessions
 
 Sessions are read from the `.desktop` files in the Wayland and X11 session directories. Hidden entries and entries whose `TryExec` / `Exec` binary is missing are skipped. If `startx` is installed, a "Default X11 Session" entry is added as well.
+
+### Fingerprint login
+
+greetd runs PAM, so fingerprint login is configured there, not in hyprlogin. Add `pam_fprintd` to `/etc/pam.d/greetd`, above the password line:
+
+```
+auth      sufficient pam_fprintd.so
+```
+
+hyprlogin shows fprintd's prompt and logs in as soon as the scan succeeds, without asking for a password.
 
 ### File permissions
 

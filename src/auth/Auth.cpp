@@ -1,30 +1,16 @@
 #include "Auth.hpp"
-#include "Pam.hpp"
-#include "Fingerprint.hpp"
 #include "Greetd.hpp"
 #include "../config/ConfigManager.hpp"
 #include "../core/hyprlock.hpp"
 #include "src/helpers/Log.hpp"
 
+#include <algorithm>
 #include <hyprlang.hpp>
 #include <memory>
 
 CAuth::CAuth() {
-    static const auto ENABLEGREETD = g_pConfigManager->getValue<Hyprlang::INT>("auth:greetd:enabled");
-    if (*ENABLEGREETD)
-        m_vImpls.emplace_back(makeShared<CGreetd>());
-
-    static const auto ENABLEPAM = g_pConfigManager->getValue<Hyprlang::INT>("auth:pam:enabled");
-    if (*ENABLEPAM)
-        m_vImpls.emplace_back(makeShared<CPam>());
-    static const auto ENABLEFINGERPRINT = g_pConfigManager->getValue<Hyprlang::INT>("auth:fingerprint:enabled");
-    if (*ENABLEFINGERPRINT)
-        m_vImpls.emplace_back(makeShared<CFingerprint>());
-
-    RASSERT(!m_vImpls.empty(), "At least one authentication method must be enabled!");
-
-    Log::logger->debug("auth constructed with {} implementation(s): greetd={} pam={} fingerprint={}", m_vImpls.size(),
-                       *ENABLEGREETD, *ENABLEPAM, *ENABLEFINGERPRINT);
+    // greetd owns PAM (including pam_fprintd), so it is the only backend.
+    m_vImpls.emplace_back(makeShared<CGreetd>());
 }
 
 void CAuth::start() {
@@ -49,22 +35,6 @@ bool CAuth::checkWaiting() {
 
 const std::string& CAuth::getCurrentFailText() {
     return m_sCurrentFail.failText;
-}
-
-std::optional<std::string> CAuth::getFailText(eAuthImplementations implType) {
-    for (const auto& i : m_vImpls) {
-        if (i->getImplType() == implType)
-            return i->getLastFailText();
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> CAuth::getPrompt(eAuthImplementations implType) {
-    for (const auto& i : m_vImpls) {
-        if (i->getImplType() == implType)
-            return i->getLastPrompt();
-    }
-    return std::nullopt;
 }
 
 size_t CAuth::getFailedAttempts() {

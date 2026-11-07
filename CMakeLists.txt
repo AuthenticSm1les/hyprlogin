@@ -110,30 +110,10 @@ pkg_check_modules(
   pangocairo
   libdrm
   hyprutils>=0.11.0
-  sdbus-c++>=2.0.0
   hyprgraphics>=0.1.6)
-find_library(PAM_FOUND NAMES pam libpam)
-if(PAM_FOUND)
-  set(PAM_LIB ${PAM_FOUND})
-else()
-  pkg_check_modules(PAM IMPORTED_TARGET libpam)
-  if(PAM_FOUND)
-    set(PAM_LIB PkgConfig::PAM)
-  else()
-    pkg_check_modules(PAM IMPORTED_TARGET pam)
-      if(PAM_FOUND)
-        set(PAM_LIB PkgConfig::PAM)
-      else()
-        message(FATAL_ERROR "The required library libpam was not found.")
-      endif()
-  endif()
-endif()
-
-message(STATUS "Found pam at ${PAM_LIB}")
-
 file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp")
 add_executable(hyprlogin ${SRCFILES})
-target_link_libraries(hyprlogin PRIVATE ${PAM_LIB} rt Threads::Threads PkgConfig::deps
+target_link_libraries(hyprlogin PRIVATE rt Threads::Threads PkgConfig::deps
                                        OpenGL::EGL OpenGL::GLES3)
 target_compile_options(hyprlogin PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-unused-value
                                           -Wno-missing-field-initializers -Wno-narrowing)

@@ -4,8 +4,6 @@
 #include "../renderer/Renderer.hpp"
 #include "../renderer/AsyncResourceManager.hpp"
 #include "../auth/Auth.hpp"
-#include "../auth/Fingerprint.hpp"
-#include "./Dbus.hpp"
 #include "../helpers/MiscFunctions.hpp"
 #include "../helpers/RememberCache.hpp"
 #include "./Egl.hpp"
@@ -23,7 +21,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <sdbus-c++/sdbus-c++.h>
 #include <hyprutils/os/Process.hpp>
 #include <malloc.h>
 #include <fstream>
@@ -140,9 +137,6 @@ CHyprlock::CHyprlock(std::string_view wlDisplay, const bool immediateRender) {
     const auto SZCURRENTD     = std::string{CURRENTDESKTOP ? CURRENTDESKTOP : ""};
     m_sCurrentDesktop         = SZCURRENTD;
 
-    static const auto ENABLEFINGERPRINT = g_pConfigManager->getValue<Hyprlang::INT>("auth:fingerprint:enabled");
-    g_dbus                              = makeUnique<CDbus>(*ENABLEFINGERPRINT);
-
     loadSessions();
     resolveDefaultUser();
 
@@ -255,25 +249,19 @@ void CHyprlock::run() {
     }
 
     // Start auth only once the lock is held, so a rejected instance exits
-    // without stranding greetd/PAM/fingerprint threads.
+    // without stranding the greetd conversation thread.
     g_pAuth = makeUnique<CAuth>();
     g_pAuth->start();
 
     registerSignalAction(SIGUSR2, handleForceUpdateSignal);
     registerSignalAction(SIGRTMIN, handlePollTerminate);
 
-    pollfd pollfds[2];
+    pollfd pollfds[1];
     pollfds[0] = {
         .fd     = wl_display_get_fd(m_sWaylandState.display),
         .events = POLLIN,
     };
-    if (g_dbus->m_connection) {
-        pollfds[1] = {
-            .fd     = g_dbus->m_connection->getEventLoopPollData().fd,
-            .events = POLLIN,
-        };
-    }
-    size_t      fdcount = g_dbus->m_connection ? 2 : 1;
+    size_t      fdcount = 1;
 
     std::thread pollThr([this, &pollfds, fdcount]() {
         while (!m_bTerminate) {
@@ -354,11 +342,6 @@ void CHyprlock::run() {
         m_sLoopState.wlDispatched = true;
         m_sLoopState.wlDispatchCV.notify_all();
 
-        if (pollfds[1].revents & POLLIN /* dbus */) {
-            while (g_dbus->m_connection && g_dbus->m_connection->processPendingEvent()) {
-                ;
-            }
-        }
 
         processTimers();
     }
@@ -389,8 +372,6 @@ void CHyprlock::run() {
     g_pEGL.reset();
 
     wl_display_disconnect(DPY);
-
-    g_dbus.reset();
 
     Log::logger->log(Log::INFO, "Reached the end, exiting");
 }

@@ -254,14 +254,6 @@ void CConfigManager::init() {
     m_config.addConfigValue("general:debug_mode", Hyprlang::INT{0});
     m_config.addConfigValue("general:debug_log_path", Hyprlang::STRING{"/tmp/hyprlogin-debug.log"});
 
-    m_config.addConfigValue("auth:greetd:enabled", Hyprlang::INT{1});
-    m_config.addConfigValue("auth:pam:enabled", Hyprlang::INT{0});
-    m_config.addConfigValue("auth:pam:module", Hyprlang::STRING{"login"});
-    m_config.addConfigValue("auth:fingerprint:enabled", Hyprlang::INT{0});
-    m_config.addConfigValue("auth:fingerprint:ready_message", Hyprlang::STRING{"(Scan fingerprint to unlock)"});
-    m_config.addConfigValue("auth:fingerprint:present_message", Hyprlang::STRING{"Scanning fingerprint"});
-    m_config.addConfigValue("auth:fingerprint:retry_delay", Hyprlang::INT{250});
-
     m_config.addConfigValue("sessions:wayland_path", Hyprlang::STRING{"/usr/share/wayland-sessions"});
     m_config.addConfigValue("sessions:x11_path", Hyprlang::STRING{"/usr/share/xsessions"});
     m_config.addConfigValue("sessions:default_user", Hyprlang::STRING{""});
