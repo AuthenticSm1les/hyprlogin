@@ -1,4 +1,5 @@
 #include "ConfigManager.hpp"
+#include "../greeter/Greeter.hpp"
 #include "ConfigDataValues.hpp"
 #include "../helpers/MiscFunctions.hpp"
 #include "../helpers/Log.hpp"
@@ -248,19 +249,8 @@ void CConfigManager::init() {
     m_config.addConfigValue("general:hide_cursor", Hyprlang::INT{0});
     m_config.addConfigValue("general:ignore_empty_input", Hyprlang::INT{0});
     m_config.addConfigValue("general:immediate_render", Hyprlang::INT{0});
-    m_config.addConfigValue("general:exit_command", Hyprlang::STRING{"hyprctl dispatch exit"});
     m_config.addConfigValue("general:fractional_scaling", Hyprlang::INT{2});
     m_config.addConfigValue("general:fail_timeout", Hyprlang::INT{4000});
-    m_config.addConfigValue("general:debug_mode", Hyprlang::INT{0});
-    m_config.addConfigValue("general:debug_log_path", Hyprlang::STRING{"/tmp/hyprlogin-debug.log"});
-
-    m_config.addConfigValue("sessions:wayland_path", Hyprlang::STRING{"/usr/share/wayland-sessions"});
-    m_config.addConfigValue("sessions:x11_path", Hyprlang::STRING{"/usr/share/xsessions"});
-    m_config.addConfigValue("sessions:default_user", Hyprlang::STRING{""});
-    m_config.addConfigValue("sessions:default_session", Hyprlang::STRING{""});
-    m_config.addConfigValue("sessions:remember_user", Hyprlang::INT{1});
-    m_config.addConfigValue("sessions:remember_session", Hyprlang::INT{1});
-    m_config.addConfigValue("sessions:remember_dir", Hyprlang::STRING{HYPRLOGIN_CACHE_DIR});
 
     m_config.addConfigValue("animations:enabled", Hyprlang::INT{1});
 
@@ -332,7 +322,6 @@ void CConfigManager::init() {
     m_config.addSpecialConfigValue("input-field", "valign", Hyprlang::STRING{"center"});
     m_config.addSpecialConfigValue("input-field", "position", LAYOUTCONFIG("0,0"));
     m_config.addSpecialConfigValue("input-field", "placeholder_text", Hyprlang::STRING{"<i>Input Password</i>"});
-    m_config.addSpecialConfigValue("input-field", "placeholder_text_username", Hyprlang::STRING{"<i>Input Username</i>"});
     m_config.addSpecialConfigValue("input-field", "hide_input", Hyprlang::INT{0});
     m_config.addSpecialConfigValue("input-field", "hide_input_base_color", Hyprlang::INT{0xEE00FF99});
     m_config.addSpecialConfigValue("input-field", "rounding", Hyprlang::INT{-1});
@@ -360,7 +349,6 @@ void CConfigManager::init() {
     m_config.addSpecialConfigValue("label", "rotate", Hyprlang::FLOAT{0});
     m_config.addSpecialConfigValue("label", "text_align", Hyprlang::STRING{""});
     m_config.addSpecialConfigValue("label", "zindex", Hyprlang::INT{0});
-    m_config.addSpecialConfigValue("label", "hide_when_empty", Hyprlang::INT{0});
     SHADOWABLE("label");
     CLICKABLE("label");
 
@@ -390,6 +378,8 @@ void CConfigManager::init() {
     // set config for root node
     m_AnimationTree.setConfigForNode("global", 1, 8.f, "default");
     m_AnimationTree.setConfigForNode("inputFieldColors", 1, 8.f, "linear");
+
+    CGreeter::registerConfig(m_config); // hyprlogin
 
     m_config.commence();
 

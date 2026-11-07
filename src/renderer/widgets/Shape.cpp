@@ -3,6 +3,7 @@
 #include "../../config/ConfigDataValues.hpp"
 #include "../../core/hyprlock.hpp"
 #include "../../helpers/MiscFunctions.hpp"
+#include "../../greeter/Greeter.hpp"
 #include <cmath>
 #include <hyprlang.hpp>
 #include <sys/types.h>
@@ -118,7 +119,7 @@ CBox CShape::getBoundingBoxWl() const {
 
 void CShape::onClick(uint32_t button, bool down, const Vector2D& pos) {
     if (down && !onclickCommand.empty()) {
-        if (handleInternalCommand(onclickCommand))
+        if (g_pGreeter->handleInternalCommand(onclickCommand)) // hyprlogin
             return;
         spawnAsync(onclickCommand);
     }

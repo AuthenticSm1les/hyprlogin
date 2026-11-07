@@ -3,6 +3,7 @@
 #include "core/hyprlock.hpp"
 #include "helpers/Log.hpp"
 #include "core/AnimationManager.hpp"
+#include "greeter/Greeter.hpp"
 
 #include <string_view>
 #include <csignal>
@@ -93,6 +94,9 @@ int main(int argc, char** argv, char** envp) {
 
     if (noFadeIn)
         g_pConfigManager->m_AnimationTree.setConfigForNode("fadeIn", false, 0.f, "default");
+
+    g_pGreeter = makeUnique<CGreeter>(); // hyprlogin
+    g_pGreeter->init();
 
     try {
         g_pHyprlock = makeUnique<CHyprlock>(argParser.getString("display").value_or(""), immediateRender);

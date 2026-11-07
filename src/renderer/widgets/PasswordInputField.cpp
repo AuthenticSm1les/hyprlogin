@@ -2,6 +2,7 @@
 #include "../AsyncResourceManager.hpp"
 #include "../Renderer.hpp"
 #include "../../core/hyprlock.hpp"
+#include "../../greeter/Greeter.hpp"
 #include "../../auth/Auth.hpp"
 #include "../../config/ConfigDataValues.hpp"
 #include "../../config/ConfigManager.hpp"
@@ -191,7 +192,7 @@ bool CPasswordInputField::draw(const SRenderData& data) {
     bool forceReload = false;
 
     passwordLength = g_pHyprlock->getPasswordBufferDisplayLen();
-    inputHidden    = g_pHyprlock->isInputBufferHidden();
+    inputHidden    = g_pGreeter->isSecretInput(); // hyprlogin
     checkWaiting   = g_pAuth->checkWaiting();
     displayFail    = g_pAuth->m_bDisplayFailText;
 

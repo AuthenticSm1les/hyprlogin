@@ -1,5 +1,5 @@
 #include "Auth.hpp"
-#include "Greetd.hpp"
+#include "../greeter/Greetd.hpp"
 #include "../config/ConfigManager.hpp"
 #include "../core/hyprlock.hpp"
 #include "src/helpers/Log.hpp"

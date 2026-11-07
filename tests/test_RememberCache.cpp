@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../src/helpers/RememberCache.hpp"
+#include "../src/greeter/RememberCache.hpp"
 
 #include <filesystem>
 #include <fstream>
