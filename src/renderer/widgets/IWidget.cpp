@@ -1,6 +1,7 @@
 #include "IWidget.hpp"
 #include "../../helpers/Log.hpp"
 #include "../../core/hyprlock.hpp"
+#include "../../greeter/Greeter.hpp"
 #include "../../auth/Auth.hpp"
 #include <chrono>
 #include <hyprgraphics/resource/resources/TextResource.hpp>
@@ -183,28 +184,9 @@ static std::string getTime12h() {
 }
 
 IWidget::SFormatResult IWidget::formatString(std::string in) {
-    Log::logger->debug("formatString: input='{}'", in);
-
     IWidget::SFormatResult result;
-    if (in.contains("$GREETD_USER")) {
-        Log::logger->debug("formatString: found $GREETD_USER, targetUsername='{}'", g_pHyprlock->getTargetUsername());
-        if (g_pHyprlock->getTargetUsername().empty())
-            in = "";
-        else
-            replaceInString(in, "$GREETD_USER", g_pHyprlock->getTargetUsername());
-        Log::logger->debug("formatString: $GREETD_USER formatted='{}'", in);
+    if (g_pGreeter->replaceVariables(in)) // hyprlogin
         result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$GREETD_PROMPT")) {
-        replaceInString(in, "$GREETD_PROMPT", g_pHyprlock->getGreeterPrompt());
-        result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$GREETD_SESSION")) {
-        replaceInString(in, "$GREETD_SESSION", g_pHyprlock->getSelectedSessionName());
-        result.allowForceUpdate = true;
-    }
     replaceInString(in, "<br/>", std::string{"\n"});
 
     if (in.contains("$TIME12")) {
@@ -230,30 +212,6 @@ IWidget::SFormatResult IWidget::formatString(std::string in) {
     if (in.contains("$FAIL")) {
         const auto FAIL = g_pAuth->getCurrentFailText();
         replaceInString(in, "$FAIL", FAIL);
-        result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$PAMFAIL")) {
-        const auto FAIL = g_pAuth->getFailText(AUTH_IMPL_PAM);
-        replaceInString(in, "$PAMFAIL", FAIL.value_or(""));
-        result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$PAMPROMPT")) {
-        const auto PROMPT = g_pAuth->getPrompt(AUTH_IMPL_PAM);
-        replaceInString(in, "$PAMPROMPT", PROMPT.value_or(""));
-        result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$FPRINTFAIL")) {
-        const auto FPRINTFAIL = g_pAuth->getFailText(AUTH_IMPL_FINGERPRINT);
-        replaceInString(in, "$FPRINTFAIL", FPRINTFAIL.value_or(""));
-        result.allowForceUpdate = true;
-    }
-
-    if (in.contains("$FPRINTPROMPT")) {
-        const auto FPRINTPROMPT = g_pAuth->getPrompt(AUTH_IMPL_FINGERPRINT);
-        replaceInString(in, "$FPRINTPROMPT", FPRINTPROMPT.value_or(""));
         result.allowForceUpdate = true;
     }
 

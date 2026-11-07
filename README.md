@@ -13,11 +13,12 @@ hyprlogin is a fork of [hyprlock](https://github.com/hyprwm/hyprlock), repurpose
 
 - Native greetd backend (username, password and session selection)
 - Discovers Wayland and X11 sessions automatically
+- Remembers the last user and session, tuigreet style (`sessions:remember_user`, `sessions:remember_session`)
 - Preselected user and session (`sessions:default_user`, `sessions:default_session`)
 - hyprlock-compatible config: existing hyprlock themes work unchanged
 - Fully GPU-accelerated, multi-threaded resource loading, fractional scaling
 - Hyprland eye candy: blur, gradients, shadows, animations
-- Optional fingerprint authentication
+- Fingerprint login through greetd's PAM stack (`pam_fprintd`)
 
 ## Requirements
 
@@ -48,8 +49,6 @@ Install the build dependencies (on Arch, these are all in the official repos):
 | mesa | EGL, libdrm |
 | cairo, pango | |
 | libxkbcommon | |
-| sdbus-cpp ≥ 2.0.0 | |
-| pam | |
 
 On distros that split development headers, install the `-dev` / `-devel` variants.
 
@@ -163,6 +162,9 @@ The config format is identical to hyprlock's, so the [hyprlock wiki](https://wik
 |---|---|---|
 | `sessions:default_user` | *(empty)* | Prefill the username field |
 | `sessions:default_session` | *(empty)* | Preselect a session by name, command, `.desktop` path or `.desktop` file name (e.g. `hyprland.desktop`) |
+| `sessions:remember_user` | `true` | Preselect the user who last logged in successfully. Overrides `sessions:default_user` once something is remembered |
+| `sessions:remember_session` | `true` | Preselect the session last started. Overrides `sessions:default_session`; falls back to it if the remembered session no longer exists |
+| `sessions:remember_dir` | `/var/cache/hyprlogin` | Where `lastuser` and `lastsession` are stored. Must be writable by the greeter user (the package creates it via `tmpfiles.d`) |
 | `sessions:wayland_path` | `/usr/share/wayland-sessions` | Where Wayland sessions are discovered |
 | `sessions:x11_path` | `/usr/share/xsessions` | Where X11 sessions are discovered |
 | `input-field:placeholder_text_username` | `<i>Input Username</i>` | Placeholder shown while asking for the username |
@@ -183,6 +185,16 @@ Clickable actions (for `onclick`): `hyprlogin:session_next`, `hyprlogin:session_
 ### Sessions
 
 Sessions are read from the `.desktop` files in the Wayland and X11 session directories. Hidden entries and entries whose `TryExec` / `Exec` binary is missing are skipped. If `startx` is installed, a "Default X11 Session" entry is added as well.
+
+### Fingerprint login
+
+greetd runs PAM, so fingerprint login is configured there, not in hyprlogin. Add `pam_fprintd` to `/etc/pam.d/greetd`, above the password line:
+
+```
+auth      sufficient pam_fprintd.so
+```
+
+hyprlogin shows fprintd's prompt and logs in as soon as the scan succeeds, without asking for a password.
 
 ### File permissions
 
@@ -214,7 +226,7 @@ To go back to your previous display manager, restore `/etc/greetd/config.toml.ba
 
 Bug reports and pull requests are welcome. When reporting an issue, include the output from `debug_mode` and `journalctl -b -u greetd`.
 
-When porting changes from upstream hyprlock, read [HYPRLOCK-DIVERGENCE.md](HYPRLOCK-DIVERGENCE.md) first. Some subsystems have been removed on purpose and should not come back. Keep the config format compatible with hyprlock.
+hyprlogin-specific code lives in `src/greeter/`; the rest of `src/` is hyprlock and only gets small hooks marked `// hyprlogin`. `scripts/upstream-status.sh` lists upstream hyprlock commits that are not ported yet. Read [HYPRLOCK-DIVERGENCE.md](HYPRLOCK-DIVERGENCE.md) before porting: some subsystems have been removed on purpose and should not come back. Keep the config format compatible with hyprlock.
 
 ## License
 

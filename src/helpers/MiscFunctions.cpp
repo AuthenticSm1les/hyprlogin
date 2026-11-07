@@ -1,6 +1,5 @@
 #include "MiscFunctions.hpp"
 #include "Log.hpp"
-#include "../core/hyprlock.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -9,7 +8,6 @@
 #include <hyprlang.hpp>
 #include <hyprutils/os/Process.hpp>
 #include <hyprutils/string/String.hpp>
-#include <pwd.h>
 #include <unistd.h>
 
 using namespace Hyprutils::String;
@@ -125,85 +123,4 @@ void spawnAsync(const std::string& cmd) {
     CProcess proc("/bin/sh", {"-c", cmd});
     if (!proc.runAsync())
         Log::logger->log(Log::ERR, "Failed to start \"{}\"", cmd);
-}
-
-std::string getUsernameForCurrentUid() {
-    const uid_t UID         = getuid();
-    auto        uidPassword = getpwuid(UID);
-    if (!uidPassword || !uidPassword->pw_name) {
-        Log::logger->log(Log::ERR, "Failed to get username for uid {} (getpwuid)", UID);
-        return "";
-    }
-
-    return std::string{uidPassword->pw_name};
-}
-
-bool isExecutableCommand(const std::string& exec) {
-    if (exec.empty())
-        return false;
-
-    size_t pos = exec.find_first_not_of(" \t");
-    if (pos == std::string::npos)
-        return false;
-
-    std::string firstToken;
-    while (true) {
-        const auto end = exec.find_first_of(" \t", pos);
-        firstToken     = exec.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
-        if (firstToken.empty())
-            return false;
-        if (!firstToken.contains("="))
-            break;
-        if (end == std::string::npos)
-            return false;
-        pos = exec.find_first_not_of(" \t", end);
-        if (pos == std::string::npos)
-            return false;
-    }
-
-    if (firstToken.starts_with('/'))
-        return access(firstToken.c_str(), R_OK | X_OK) == 0;
-
-    const auto* pathEnv = getenv("PATH");
-    if (!pathEnv)
-        return false;
-
-    std::string paths = pathEnv;
-    size_t      start = 0;
-    while (start <= paths.size()) {
-        const auto end   = paths.find(':', start);
-        const auto entry = paths.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        if (!entry.empty()) {
-            const auto candidate = std::filesystem::path(entry) / firstToken;
-            if (std::filesystem::exists(candidate) && access(candidate.c_str(), R_OK | X_OK) == 0)
-                return true;
-        }
-
-        if (end == std::string::npos)
-            break;
-        start = end + 1;
-    }
-
-    return false;
-}
-
-bool handleInternalCommand(const std::string& cmd) {
-    if (cmd == "hyprlogin:session_next") {
-        g_pHyprlock->cycleSession(1);
-        g_pHyprlock->renderAllOutputs();
-        return true;
-    }
-
-    if (cmd == "hyprlogin:session_prev") {
-        g_pHyprlock->cycleSession(-1);
-        g_pHyprlock->renderAllOutputs();
-        return true;
-    }
-
-    if (cmd == "hyprlogin:clear_input") {
-        g_pHyprlock->clearPasswordBuffer();
-        return true;
-    }
-
-    return false;
 }

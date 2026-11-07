@@ -51,7 +51,6 @@ class CAsyncResourceManager {
     void          enqueueStaticAssets();
     void          gatherInitialResources(wl_display* display);
 
-    bool          checkIdPresent(ResourceID id);
 
   private:
     // Returns whether or not the id was already requested.

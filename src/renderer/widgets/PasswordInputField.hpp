@@ -47,15 +47,9 @@ class CPasswordInputField : public IWidget {
     bool                     redrawShadow = false;
     bool                     checkWaiting = false;
     bool                     displayFail  = false;
-    bool                     lastLoggedCheckWaiting = false;
-    bool                     lastLoggedDisplayFail  = false;
 
     size_t                   passwordLength = 0;
-    size_t                   lastLoggedPasswordLength = 0;
     bool                     inputHidden    = true;
-    bool                     lastLoggedInputHidden    = true;
-    std::string              lastLoggedPrompt         = "";
-    std::string              lastLoggedTargetUsername = "";
 
     PHLANIMVAR<Vector2D>     size;
     Vector2D                 pos;

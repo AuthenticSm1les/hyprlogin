@@ -16,14 +16,6 @@
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-compose.h>
 
-struct SGreeterSession {
-    std::string name;
-    std::string command;
-    std::string type;
-    std::string desktopNames;
-    std::string desktopFile;
-};
-
 class CHyprlock {
   public:
     CHyprlock(std::string_view wlDisplay, const bool immediateRender);
@@ -52,22 +44,9 @@ class CHyprlock {
     void                       repeatKey(xkb_keysym_t sym);
     void                       handleKeySym(xkb_keysym_t sym, bool compose);
     void                       clearPasswordBuffer();
+    // hyprlogin: the buffer holds the username or the password, see CGreeter
     const std::string&         getInputBuffer();
     void                       setInputBuffer(const std::string& input);
-    bool                       isInputBufferHidden();
-    void                       setGreeterPrompt(const std::string& prompt, bool secretInput);
-    const std::string&         getGreeterPrompt();
-    void                       setTargetUsername(const std::string& username);
-    void                       clearTargetUsername();
-    const std::string&         getTargetUsername();
-    // Batch-update all greeter UI state atomically, then render once.
-    // Prevents partial renders where the prompt shows stale "Validating..."
-    // while the username has already changed.
-    void                       setGreeterUIState(const std::string& prompt, bool secretInput, std::string_view username);
-    void                       cycleSession(int delta);
-    std::string                getSelectedSessionName();
-    std::string                getSelectedSessionCommand();
-    std::vector<std::string>   getSelectedSessionEnv();
 
     void                       renderOutput(const std::string& stringPort);
     void                       renderAllOutputs();
@@ -78,7 +57,6 @@ class CHyprlock {
     SP<CCWlCompositor>               getCompositor();
     SP<CCWpFractionalScaleManagerV1> getFractionalMgr();
     SP<CCWpViewporter>               getViewporter();
-    SP<CCWlShm>                      getShm();
 
     int32_t                          m_iKeebRepeatRate  = 25;
     int32_t                          m_iKeebRepeatDelay = 600;
@@ -93,13 +71,12 @@ class CHyprlock {
     bool                             m_bCapsLock = false;
     bool                             m_bNumLock  = false;
     bool                             m_bCtrl     = false;
-    bool                             m_bShift    = false;
 
     bool                             m_bImmediateRender = false;
 
     std::string                      m_sCurrentDesktop = "";
 
-    WP<COutput>                      m_focusedOutput;
+    WP<COutput>                           m_focusedOutput;
 
     Vector2D                              m_vMouseLocation = {};
 
@@ -116,7 +93,6 @@ class CHyprlock {
         SP<CCWlCompositor>               compositor  = nullptr;
         SP<CCWpFractionalScaleManagerV1> fractional  = nullptr;
         SP<CCWpViewporter>               viewporter  = nullptr;
-        SP<CCWlShm>                      shm         = nullptr;
     } m_sWaylandState;
 
     struct {
@@ -128,14 +104,6 @@ class CHyprlock {
         size_t      failedAttempts  = 0;
         bool        displayFailText = false;
     } m_sPasswordState;
-
-    struct {
-        std::string                 prompt               = "Username";
-        bool                        secretInput          = false;
-        std::string                 targetUsername       = "";
-        std::vector<SGreeterSession> sessions            = {};
-        size_t                      selectedSessionIndex = 0;
-    } m_sGreeterState;
 
     struct {
         std::mutex              timersMutex;
@@ -155,8 +123,6 @@ class CHyprlock {
     std::vector<ASP<CTimer>> m_vTimers;
 
     std::vector<uint32_t>    m_vPressedKeys;
-
-    void                     loadSessions();
 };
 
 inline UP<CHyprlock> g_pHyprlock;

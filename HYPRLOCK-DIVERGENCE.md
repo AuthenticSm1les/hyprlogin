@@ -5,81 +5,103 @@ serves a different purpose: it is a **greetd greeter**. It runs inside a
 Hyprland session as the `greeter` user and logs into a target user, rather
 than locking an already-running desktop session.
 
-Because of that, some hyprlock subsystems are dead code here and have been
-**removed**. When porting future fixes from upstream hyprlock, do **not**
-reintroduce these — skip or adapt the corresponding commits.
+The fork is kept close to upstream so hyprlock fixes can keep being ported.
+Two rules make that work:
+
+1. **hyprlogin code lives in `src/greeter/`.** Everything else is hyprlock.
+2. **Upstream files only get hooks.** Where hyprlock code has to call into
+   the greeter, it is a single call on `g_pGreeter`, marked `// hyprlogin`.
+   Don't reformat, rename or restructure upstream code around it.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/greeter/Greeter.*` | `CGreeter` (`g_pGreeter`): prompt, target user, session selection, default and remembered user, Escape/Tab/arrow keys, `hyprlogin:*` onclick commands, `$GREETD_*` variables, `general:exit_command`, and registration of all hyprlogin config options |
+| `src/greeter/Sessions.*` | `.desktop` session discovery, matching and session environment |
+| `src/greeter/Greetd.*` | greetd IPC auth backend, the only `IAuthImplementation` |
+| `src/greeter/RememberCache.*` | `lastuser` / `lastsession` cache in `/var/cache/hyprlogin` |
+| everything else | hyprlock, minus the removed subsystems below |
+
+### Hooks in upstream files
+
+List them with:
+
+```sh
+grep -rn '// hyprlogin' src --exclude-dir=greeter
+```
+
+| File | Hook |
+|---|---|
+| `main.cpp` | create `g_pGreeter` and call `init()` after the config is loaded |
+| `config/ConfigManager.cpp` | `CGreeter::registerConfig(m_config)` before `commence()` |
+| `core/hyprlock.cpp` | `handleKeySym` gives keys to `g_pGreeter->handleKeySym` first; `releaseSessionLock` calls `onSessionLockReleased` |
+| `core/hyprlock.hpp` | `getInputBuffer` / `setInputBuffer` (the buffer holds the username or the password) |
+| `widgets/IWidget.cpp` | `formatString` calls `g_pGreeter->replaceVariables` |
+| `widgets/{Label,Image,Shape}.cpp` | `onClick` tries `g_pGreeter->handleInternalCommand` before spawning |
+| `widgets/PasswordInputField.cpp` | `inputHidden` comes from `g_pGreeter->isSecretInput()` |
+
+Two widget features are still implemented inside upstream widget files
+because they are rendering code: the visible username text in
+`PasswordInputField` (`updateInputState`, `inputText`) and
+`label:hide_when_empty` plus live re-formatting in `CLabel::draw`.
 
 ## Removed subsystems
 
-### 1. Screencopy + DMABUF/GBM
+These are dead or wrong for a greeter. Don't port upstream commits that
+only touch them; `scripts/upstream-status.sh` reports such commits as
+`n/a` or `skipped`.
 
-hyprlock uses `wlr-screencopy` + `linux-dmabuf` + GBM to capture the desktop
-behind the lock screen (the blurred-background effect). A greetd greeter has
-no desktop behind it, so screencopy only ever captured the greeter's own
-empty framebuffer.
+### Screencopy + DMABUF/GBM
 
-Removed:
+hyprlock captures the desktop behind the lock screen for its blurred
+background. A greeter has no desktop behind it.
 
-- `src/renderer/Screencopy.{cpp,hpp}` (deleted)
-- `wlr-screencopy-unstable-v1` and `linux-dmabuf-v1` protocols (CMake
-  `protocolnew` lines + generated files under `protocols/`)
-- dmabuf feedback handlers, `gbm_find_render_node`, `createGBMDevice`,
-  `addDmabufListener`/`removeDmabufListener`, and the `linux_dmabuf` /
-  `wlr_screencopy_manager` registry binds in `src/core/hyprlock.cpp`
-- `dma` state struct, `getScreencopy()`, and the `screencopy` field in
-  `src/core/hyprlock.hpp`
-- `enqueueScreencopyFrames`, `screencopyToTexture`,
-  `resourceIDForScreencopy`, and `m_scFrames` in
-  `src/renderer/AsyncResourceManager.{cpp,hpp}`
-- the `background:path = "screenshot"` branch and `isScreenshot`/`scAsset`/
-  `scResourceID`/`transformedScFB` in `src/renderer/widgets/Background.{cpp,hpp}`
-- `general:screencopy_mode` config value
-- `gbm` pkg-config dependency in `CMakeLists.txt` (`libdrm` is still used by
-  `Framebuffer.cpp` — keep it)
+Removed: `src/renderer/Screencopy.*`, `mtx.hpp`, `Shared.hpp`, the
+`wlr-screencopy-unstable-v1` and `linux-dmabuf-v1` protocols, dmabuf
+feedback and GBM device code in `hyprlock.cpp`, the screencopy paths in
+`AsyncResourceManager` and `Background`, `background:path = screenshot`,
+`general:screencopy_mode`, the `wl_shm` bind, and the `gbm` dependency.
 
-### 2. Grace period
+### PAM and fingerprint backends
 
-hyprlock's `--grace N` lets you auto-unlock without a password for N seconds
-after locking. It is meaningless (and a security hazard) for a greeter.
+hyprlock authenticates the locked user in-process. In a greeter both
+backends were wrong: `CPam` authenticated the *greeter* user, `CFingerprint`
+verified the greeter user's prints over fprintd, and on success both only
+exited the greeter without starting a session. greetd owns PAM, so
+fingerprint login works through `pam_fprintd` in `/etc/pam.d/greetd`,
+which the greetd backend handles.
 
-Removed:
+Removed: `src/auth/Pam.*`, `src/auth/Fingerprint.*`, `src/core/Dbus.*`
+and the D-Bus fd in the event loop, `auth:*` options, the `$PAMFAIL`,
+`$PAMPROMPT`, `$FPRINTFAIL`, `$FPRINTPROMPT`, `$USER` and `$DESC` label
+variables, and the `pam` and `sdbus-c++` dependencies.
 
-- `--grace` / deprecated `--immediate` CLI flags in `src/main.cpp`
-- `m_tGraceEnds`, the constructor `gracePeriod` parameter, the `onKey`
-  grace branch, and the cursor-motion grace-unlock branch in
-  `src/core/Seat.cpp`
+### Grace period and signals
 
-### 3. SIGUSR1 / SIGUSR2 external signals
+`--grace` auto-unlocks without a password, and `SIGUSR1` unlocks on an
+external signal: both are security holes in a greeter. `SIGUSR2` forced a
+label refresh, which nothing sends to a greeter.
 
-hyprlock unlocks on `SIGUSR1` and force-re-renders on `SIGUSR2`. A greeter
-must not auto-login on an external signal.
+`SIGRTMIN` (poll-thread termination) is still used internally.
 
-Removed:
+## Porting workflow
 
-- `handleUnlockSignal` (SIGUSR1) and `handleForceUpdateSignal` (SIGUSR2) and
-  their `registerSignalAction` calls in `src/core/hyprlock.cpp`
+```sh
+git remote add upstream https://github.com/hyprwm/hyprlock.git   # once
+git config rerere.enabled true                                    # once
+scripts/upstream-status.sh
+```
 
-`SIGRTMIN` (poll-thread termination, `handlePollTerminate`) is still used
-internally — keep it.
+The script test-picks every upstream commit since the fork onto `HEAD` in
+a throwaway worktree and prints one of:
 
-## What was kept (not dead)
+- `ported`: already here (same patch, or a `cherry picked from commit` trailer)
+- `skipped`: listed in `scripts/upstream-skip` with a reason
+- `n/a`: only touches removed subsystems, CI, Nix or `VERSION`
+- `clean`: apply with `git cherry-pick -x <sha>`
+- `conflict`: port by hand; the conflicting files are listed
 
-- `ext-session-lock-v1` / `LockSurface` — this is how the greeter renders
-  full-screen surfaces; it holds the lock and releases it on login.
-- `fractional-scale-v1`, `viewporter`, `cursor-shape-v1`, `tablet-v2` — used
-  for rendering/input.
-- All widgets (`background`, `input-field`, `label`, `image`, `shape`) and
-  template variables (`$USER`, `$DESC`, `$TIME`, `$FAIL`, ...).
-- Optional auth backends: `Greetd` (default), `Pam`, `Fingerprint` + `Dbus`.
-
-## Guidance for porting future hyprlock commits
-
-Skip (or manually adapt) upstream commits that touch any of:
-
-- `Screencopy`, `wlr-screencopy`, `linux-dmabuf`, dmabuf/GBM feedback,
-  `general:screencopy_mode`, or `background:path = "screenshot"`
-- grace / `m_tGraceEnds` / `--grace` / `--immediate`
-- `SIGUSR1` / `SIGUSR2` unlock or force-update
-
-Rendering/EGL, widget, config-parsing, PAM, and fingerprint fixes generally
-port cleanly.
+Always keep the `(cherry picked from commit <sha>)` trailer, also on manual
+ports (add it to the message yourself), so the script recognises them.
+When you decide not to port a commit, add it to `scripts/upstream-skip`.

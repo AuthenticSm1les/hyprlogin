@@ -1,0 +1,10 @@
+# hyprlock commits that will not be ported, one per line: <sha> <reason>
+# scripts/upstream-status.sh reports these as "skipped".
+78c1d26 dmabuf/screencopy (removed)
+c86727a dmabuf/screencopy (removed)
+328d025 screencopy option (removed)
+69dc06a screencopy background transform (removed)
+8bac7da D-Bus split for fingerprint backend (removed)
+1f337a4 PAM backend (removed)
+64ad702 already fixed differently in PasswordInputField::updatePlaceholder
+d332164 hyprlogin has its own config lookup
