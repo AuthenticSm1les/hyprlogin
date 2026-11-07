@@ -31,6 +31,7 @@ set(CMAKE_CXX_STANDARD 23)
 
 add_compile_definitions(HYPRLOGIN_VERSION="${VERSION}")
 add_compile_definitions(HYPRLOGIN_SYSTEM_CONFIG="/etc/hyprlogin/hyprlogin.conf")
+add_compile_definitions(HYPRLOGIN_CACHE_DIR="/var/cache/hyprlogin")
 add_compile_definitions(HYPRLOGIN_EXAMPLE_CONFIG="${CMAKE_INSTALL_FULL_DATAROOTDIR}/hyprlogin/examples/hyprlogin.conf")
 
 find_package(Git QUIET)
@@ -202,3 +203,8 @@ install(
 install(
   FILES ${CMAKE_SOURCE_DIR}/assets/greetd-config.toml
   DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/hyprlogin)
+
+install(
+  FILES ${CMAKE_SOURCE_DIR}/assets/tmpfiles.conf
+  DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/tmpfiles.d
+  RENAME hyprlogin.conf)

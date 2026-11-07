@@ -13,6 +13,7 @@ hyprlogin is a fork of [hyprlock](https://github.com/hyprwm/hyprlock), repurpose
 
 - Native greetd backend (username, password and session selection)
 - Discovers Wayland and X11 sessions automatically
+- Remembers the last user and session, tuigreet style (`sessions:remember_user`, `sessions:remember_session`)
 - Preselected user and session (`sessions:default_user`, `sessions:default_session`)
 - hyprlock-compatible config: existing hyprlock themes work unchanged
 - Fully GPU-accelerated, multi-threaded resource loading, fractional scaling
@@ -163,6 +164,9 @@ The config format is identical to hyprlock's, so the [hyprlock wiki](https://wik
 |---|---|---|
 | `sessions:default_user` | *(empty)* | Prefill the username field |
 | `sessions:default_session` | *(empty)* | Preselect a session by name, command, `.desktop` path or `.desktop` file name (e.g. `hyprland.desktop`) |
+| `sessions:remember_user` | `true` | Preselect the user who last logged in successfully. Overrides `sessions:default_user` once something is remembered |
+| `sessions:remember_session` | `true` | Preselect the session last started. Overrides `sessions:default_session`; falls back to it if the remembered session no longer exists |
+| `sessions:remember_dir` | `/var/cache/hyprlogin` | Where `lastuser` and `lastsession` are stored. Must be writable by the greeter user (the package creates it via `tmpfiles.d`) |
 | `sessions:wayland_path` | `/usr/share/wayland-sessions` | Where Wayland sessions are discovered |
 | `sessions:x11_path` | `/usr/share/xsessions` | Where X11 sessions are discovered |
 | `input-field:placeholder_text_username` | `<i>Input Username</i>` | Placeholder shown while asking for the username |

@@ -68,6 +68,12 @@ class CHyprlock {
     std::string                getSelectedSessionName();
     std::string                getSelectedSessionCommand();
     std::vector<std::string>   getSelectedSessionEnv();
+    // sessions:default_user, overridden by the remembered user when
+    // sessions:remember_user is enabled and a previous login was stored.
+    const std::string&         getDefaultUser();
+    // Stores user and selected session for the next greeter run (subject to
+    // sessions:remember_user / sessions:remember_session).
+    void                       rememberLogin(const std::string& username);
 
     void                       renderOutput(const std::string& stringPort);
     void                       renderAllOutputs();
@@ -156,7 +162,11 @@ class CHyprlock {
 
     std::vector<uint32_t>    m_vPressedKeys;
 
+    std::string              m_sDefaultUser = "";
+
     void                     loadSessions();
+    void                     resolveDefaultUser();
+    static bool              sessionMatches(const SGreeterSession& session, std::string_view id);
 };
 
 inline UP<CHyprlock> g_pHyprlock;

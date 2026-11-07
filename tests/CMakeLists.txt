@@ -50,3 +50,7 @@ add_test(NAME StringUtils COMMAND test_StringUtils)
 add_executable(test_LabelFeatures test_LabelFeatures.cpp)
 target_link_libraries(test_LabelFeatures PRIVATE GTest::GTest GTest::Main PkgConfig::deps)
 add_test(NAME LabelFeatures COMMAND test_LabelFeatures)
+
+add_executable(test_RememberCache test_RememberCache.cpp ../src/helpers/RememberCache.cpp)
+target_link_libraries(test_RememberCache PRIVATE GTest::GTest GTest::Main)
+add_test(NAME RememberCache COMMAND test_RememberCache)

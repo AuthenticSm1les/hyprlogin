@@ -266,6 +266,9 @@ void CConfigManager::init() {
     m_config.addConfigValue("sessions:x11_path", Hyprlang::STRING{"/usr/share/xsessions"});
     m_config.addConfigValue("sessions:default_user", Hyprlang::STRING{""});
     m_config.addConfigValue("sessions:default_session", Hyprlang::STRING{""});
+    m_config.addConfigValue("sessions:remember_user", Hyprlang::INT{1});
+    m_config.addConfigValue("sessions:remember_session", Hyprlang::INT{1});
+    m_config.addConfigValue("sessions:remember_dir", Hyprlang::STRING{HYPRLOGIN_CACHE_DIR});
 
     m_config.addConfigValue("animations:enabled", Hyprlang::INT{1});
 

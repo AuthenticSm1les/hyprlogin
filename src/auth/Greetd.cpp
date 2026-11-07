@@ -65,7 +65,6 @@ static void applyGreetdPromptOnMainThread(ASP<CTimer> self, void* data) {
 
 void CGreetd::init() {
     const auto* sockPath = getenv("GREETD_SOCK");
-    static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
     if (!sockPath || std::string_view(sockPath).empty()) {
         setUnavailable("Run hyprlogin from greetd");
         Log::logger->log(Log::ERR, "GREETD_SOCK not set");
@@ -74,8 +73,8 @@ void CGreetd::init() {
 
     Log::logger->debug("init: GREETD_SOCK available at '{}'", sockPath);
 
-    if (const std::string_view defaultUser = *DEFAULTUSER; !defaultUser.empty()) {
-        m_username = std::string{defaultUser};
+    if (const auto& defaultUser = g_pHyprlock->getDefaultUser(); !defaultUser.empty()) {
+        m_username = defaultUser;
         g_pHyprlock->setTargetUsername(m_username);
         g_pHyprlock->setInputBuffer("");
         Log::logger->debug("init: default user '{}' selected, starting auth conversation", m_username);
@@ -388,6 +387,7 @@ void CGreetd::handleResponse(const SResponse& response) {
                 return;
             }
 
+            g_pHyprlock->rememberLogin(m_username);
             g_pAuth->enqueueUnlock();
             Log::logger->debug("handleResponse: enqueueUnlock called, worker thread exiting normally");
             return;
@@ -436,9 +436,8 @@ std::string CGreetd::normalizeFailText(const std::string& failText) const {
 }
 
 void CGreetd::failAndReset(const std::string& failText, bool cancelSessionRequest, bool repromptUsername, bool cooldown) {
-    static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
     const auto        normalizedFailText = normalizeFailText(failText);
-    const auto        defaultUser        = std::string{std::string_view{*DEFAULTUSER}};
+    const auto        defaultUser        = g_pHyprlock->getDefaultUser();
     const auto        preservedUser      = m_username.empty() ? defaultUser : m_username;
     const bool        effectiveRepromptUsername = repromptUsername && defaultUser.empty();
 

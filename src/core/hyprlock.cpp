@@ -7,6 +7,7 @@
 #include "../auth/Fingerprint.hpp"
 #include "./Dbus.hpp"
 #include "../helpers/MiscFunctions.hpp"
+#include "../helpers/RememberCache.hpp"
 #include "./Egl.hpp"
 #include "./Seat.hpp"
 #include <chrono>
@@ -143,10 +144,10 @@ CHyprlock::CHyprlock(std::string_view wlDisplay, const bool immediateRender) {
     g_dbus                              = makeUnique<CDbus>(*ENABLEFINGERPRINT);
 
     loadSessions();
+    resolveDefaultUser();
 
-    static const auto DEFAULTUSER = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
-    if (const std::string_view defaultUser = *DEFAULTUSER; !defaultUser.empty())
-        setInputBuffer(std::string{defaultUser});
+    if (!m_sDefaultUser.empty())
+        setInputBuffer(m_sDefaultUser);
 }
 
 CHyprlock::~CHyprlock() {}
@@ -896,29 +897,80 @@ void CHyprlock::loadSessions() {
                                                [](const auto& a, const auto& b) { return a.name == b.name && a.command == b.command && a.type == b.type; }),
                                   m_sGreeterState.sessions.end());
 
-    Log::logger->debug("loadSessions: found {} session(s), default='{}' selected_index={}",
-                       m_sGreeterState.sessions.size(), *DEFAULTSESSION, m_sGreeterState.selectedSessionIndex);
+    static const auto REMEMBERSESSION = g_pConfigManager->getValue<Hyprlang::INT>("sessions:remember_session");
+    static const auto REMEMBERDIR     = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:remember_dir");
 
-    const std::string_view defaultSession = *DEFAULTSESSION;
-    if (defaultSession.empty() || m_sGreeterState.sessions.empty())
+    // The remembered session wins over sessions:default_session; the latter
+    // is the fallback for the first boot or when the remembered one is gone.
+    std::vector<std::string> candidates;
+    if (*REMEMBERSESSION) {
+        if (const auto remembered = RememberCache::read(*REMEMBERDIR, RememberCache::SESSION_ENTRY); remembered.has_value())
+            candidates.emplace_back(*remembered);
+    }
+    if (const std::string_view configured = *DEFAULTSESSION; !configured.empty())
+        candidates.emplace_back(configured);
+
+    Log::logger->debug("loadSessions: found {} session(s), default='{}' candidates={}", m_sGreeterState.sessions.size(), *DEFAULTSESSION, candidates.size());
+
+    if (m_sGreeterState.sessions.empty())
         return;
 
-    const auto matchesDefault = [defaultSession](const SGreeterSession& session) {
-        if (session.name == defaultSession || session.command == defaultSession || session.desktopFile == defaultSession)
-            return true;
+    for (const auto& candidate : candidates) {
+        const auto it = std::ranges::find_if(m_sGreeterState.sessions, [&candidate](const SGreeterSession& session) { return sessionMatches(session, candidate); });
+        if (it != m_sGreeterState.sessions.end()) {
+            m_sGreeterState.selectedSessionIndex = std::distance(m_sGreeterState.sessions.begin(), it);
+            return;
+        }
+    }
+}
 
-        const auto desktopFileName = std::filesystem::path(session.desktopFile).filename().string();
-        if (desktopFileName == defaultSession)
-            return true;
+void CHyprlock::resolveDefaultUser() {
+    static const auto DEFAULTUSER  = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:default_user");
+    static const auto REMEMBERUSER = g_pConfigManager->getValue<Hyprlang::INT>("sessions:remember_user");
+    static const auto REMEMBERDIR  = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:remember_dir");
 
-        auto desktopFileStem = std::filesystem::path(desktopFileName);
-        desktopFileStem.replace_extension("");
-        return desktopFileStem.string() == defaultSession;
-    };
+    m_sDefaultUser = std::string{std::string_view{*DEFAULTUSER}};
 
-    const auto it = std::ranges::find_if(m_sGreeterState.sessions, matchesDefault);
-    if (it != m_sGreeterState.sessions.end())
-        m_sGreeterState.selectedSessionIndex = std::distance(m_sGreeterState.sessions.begin(), it);
+    if (*REMEMBERUSER) {
+        if (const auto remembered = RememberCache::read(*REMEMBERDIR, RememberCache::USER_ENTRY); remembered.has_value())
+            m_sDefaultUser = *remembered;
+    }
+
+    Log::logger->debug("resolveDefaultUser: configured='{}' effective='{}'", *DEFAULTUSER, m_sDefaultUser);
+}
+
+const std::string& CHyprlock::getDefaultUser() {
+    return m_sDefaultUser;
+}
+
+void CHyprlock::rememberLogin(const std::string& username) {
+    static const auto REMEMBERUSER    = g_pConfigManager->getValue<Hyprlang::INT>("sessions:remember_user");
+    static const auto REMEMBERSESSION = g_pConfigManager->getValue<Hyprlang::INT>("sessions:remember_session");
+    static const auto REMEMBERDIR     = g_pConfigManager->getValue<Hyprlang::STRING>("sessions:remember_dir");
+    const std::string dir             = std::string{std::string_view{*REMEMBERDIR}};
+
+    if (*REMEMBERUSER && !username.empty() && !RememberCache::write(dir, RememberCache::USER_ENTRY, username))
+        Log::logger->log(Log::WARN, "Couldn't remember user in {} (is it writable by the greeter user?)", dir);
+
+    if (*REMEMBERSESSION && !m_sGreeterState.sessions.empty()) {
+        const auto& session = m_sGreeterState.sessions.at(m_sGreeterState.selectedSessionIndex);
+        const auto  id      = session.desktopFile.empty() ? session.name : session.desktopFile;
+        if (!RememberCache::write(dir, RememberCache::SESSION_ENTRY, id))
+            Log::logger->log(Log::WARN, "Couldn't remember session in {} (is it writable by the greeter user?)", dir);
+    }
+}
+
+bool CHyprlock::sessionMatches(const SGreeterSession& session, std::string_view id) {
+    if (session.name == id || session.command == id || session.desktopFile == id)
+        return true;
+
+    const auto desktopFileName = std::filesystem::path(session.desktopFile).filename().string();
+    if (desktopFileName == id)
+        return true;
+
+    auto desktopFileStem = std::filesystem::path(desktopFileName);
+    desktopFileStem.replace_extension("");
+    return desktopFileStem.string() == id;
 }
 
 ASP<CTimer> CHyprlock::addTimer(const std::chrono::system_clock::duration& timeout, std::function<void(ASP<CTimer> self, void* data)> cb_, void* data, bool force) {
