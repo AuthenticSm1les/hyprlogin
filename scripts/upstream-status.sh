@@ -16,7 +16,8 @@ set -euo pipefail
 REMOTE=upstream
 URL=https://github.com/hyprwm/hyprlock.git
 
-# Paths that only exist upstream; commits touching nothing else are skipped.
+# Paths that only exist upstream, or that hyprlogin maintains separately (its
+# own nix/ and flake); commits touching nothing else are skipped.
 NA_REGEX='^(src/renderer/Screencopy\.|src/renderer/mtx\.hpp|src/renderer/Shared\.hpp|src/auth/(Pam|Fingerprint)\.|src/core/Dbus\.|protocols/wlr-screencopy|nix/|flake\.(nix|lock)|\.github/|VERSION$|hyprlock\.pam$|pam/)'
 
 cd "$(git rev-parse --show-toplevel)"

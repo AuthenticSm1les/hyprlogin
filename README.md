@@ -34,6 +34,37 @@ sudo pacman -S --needed greetd hyprland
 paru -S hyprlogin-git
 ```
 
+### NixOS (flake)
+
+Add the flake and enable the module. It configures greetd, writes `/etc/hyprlogin/hyprlogin.conf`, points session discovery at the NixOS session registry and creates the remember cache:
+
+```nix
+{
+  inputs.hyprlogin.url = "github:AuthenticSm1les/hyprlogin";
+
+  outputs = { nixpkgs, hyprlogin, ... }: {
+    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+      modules = [
+        hyprlogin.nixosModules.default
+        {
+          programs.hyprland.enable = true;
+          programs.hyprlogin = {
+            enable = true;
+            # configFile = ./hyprlogin.conf;   # defaults to the example config
+            extraConfig = ''
+              sessions:default_session = hyprland.desktop
+            '';
+          };
+          # fingerprint login: security.pam.services.greetd.fprintAuth = true;
+        }
+      ];
+    };
+  };
+}
+```
+
+`greeterHyprlandConfig` replaces the greeter session's Hyprland config (monitors, keyboard layout). The package alone is `hyprlogin.packages.<system>.hyprlogin`, or use `hyprlogin.overlays.default`.
+
 ### From source
 
 Install the build dependencies (on Arch, these are all in the official repos):

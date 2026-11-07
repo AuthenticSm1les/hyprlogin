@@ -18,3 +18,5 @@ protocols/*.hpp
 .gdb_history
 *.pkg.tar.*
 *.log
+result
+result-*
