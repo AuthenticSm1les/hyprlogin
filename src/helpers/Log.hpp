@@ -85,7 +85,17 @@ namespace Log {
 
             static constexpr const char* NAMES[] = {"TRACE", "DEBUG", "WARN", "ERR", "CRIT"};
             const auto                   now     = std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now());
-            const auto line = std::format("[{:%F %T}] {}: {}\n", now, level <= Hyprutils::CLI::LOG_CRIT ? NAMES[level] : "?", msg);
+            const char*                  name    = level <= Hyprutils::CLI::LOG_CRIT ? NAMES[level] : "?";
+
+            // local time, to match journalctl; UTC if the tz database is unavailable
+            static const std::chrono::time_zone* zone = []() -> const std::chrono::time_zone* {
+                try {
+                    return std::chrono::current_zone();
+                } catch (...) { return nullptr; }
+            }();
+
+            const auto line = zone ? std::format("[{:%F %T}] {}: {}\n", std::chrono::zoned_time{zone, now}, name, msg) :
+                                     std::format("[{:%F %T} UTC] {}: {}\n", now, name, msg);
             (void)!write(m_logFd, line.data(), line.size());
         }
 

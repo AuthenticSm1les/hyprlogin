@@ -479,8 +479,8 @@ void CGreetd::dispatchFailResetToMainThread(std::string prompt, bool secretInput
         .failText    = std::move(failText),
     };
 
-    Log::logger->debug("dispatchFailResetToMainThread: prompt='{}' secret_input={} username='{}' input_len={} fail='{}'", payload->prompt,
-                                payload->secretInput, payload->username, payload->inputBuffer.size(), payload->failText);
+    Log::logger->debug("dispatchFailResetToMainThread: prompt='{}' secret_input={} username='{}' fail='{}'", payload->prompt, payload->secretInput,
+                       payload->username, payload->failText);
 
     g_pHyprlock->addTimer(std::chrono::milliseconds(0), applyGreetdFailResetOnMainThread, payload);
 }
@@ -565,12 +565,12 @@ CGreetd::SResponse CGreetd::roundtrip(const std::string& payload) {
     if (m_fd < 0 && !connectToServer())
         return {};
 
-    Log::logger->debug("roundtrip: request on fd {} payload_bytes={}", m_fd, payload.size());
-    // post_auth_message_response carries the password: never log its payload.
-    if (payload.find(R"("type":"post_auth_message_response")") != std::string::npos)
-        Log::logger->debug("roundtrip: raw request: {{\"type\":\"post_auth_message_response\",\"response\":\"<redacted>\"}}");
+    // post_auth_message_response carries the password: never log its payload or its size.
+    const bool secret = payload.find(R"("type":"post_auth_message_response")") != std::string::npos;
+    if (secret)
+        Log::logger->debug("roundtrip: raw request on fd {}: {{\"type\":\"post_auth_message_response\",\"response\":\"<redacted>\"}}", m_fd);
     else
-        Log::logger->debug("roundtrip: raw request: {}", payload);
+        Log::logger->debug("roundtrip: raw request on fd {} ({} bytes): {}", m_fd, payload.size(), payload);
 
     const uint32_t payloadLen = payload.size();
     const auto     lenWrite   = write(m_fd, &payloadLen, sizeof(payloadLen));
@@ -581,8 +581,7 @@ CGreetd::SResponse CGreetd::roundtrip(const std::string& payload) {
 
     const auto payloadWrite = write(m_fd, payload.data(), payload.size());
     if (payloadWrite != static_cast<ssize_t>(payload.size())) {
-        Log::logger->debug("roundtrip: failed writing payload on fd {} wrote={} expected={} errno={} ({})", m_fd, payloadWrite, payload.size(), errno,
-                                   strerror(errno));
+        Log::logger->debug("roundtrip: failed writing payload on fd {} errno={} ({})", m_fd, errno, strerror(errno));
         return {};
     }
 

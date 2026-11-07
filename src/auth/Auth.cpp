@@ -21,7 +21,8 @@ void CAuth::start() {
 }
 
 void CAuth::submitInput(const std::string& input) {
-    Log::logger->debug("submitInput: {} char(s) to {} implementation(s)", input.size(), m_vImpls.size());
+    // no length: the input may be a password
+    Log::logger->debug("submitInput: to {} implementation(s)", m_vImpls.size());
     for (const auto& i : m_vImpls) {
         i->handleInput(input);
     }
