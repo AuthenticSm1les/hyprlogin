@@ -236,8 +236,6 @@ void CHyprlock::run() {
 
     g_pRenderer            = makeUnique<CRenderer>();
     g_asyncResourceManager = makeUnique<CAsyncResourceManager>();
-    g_pAuth                = makeUnique<CAuth>();
-    g_pAuth->start();
 
     Log::logger->log(Log::INFO, "Running on {}", m_sCurrentDesktop);
 
@@ -251,9 +249,15 @@ void CHyprlock::run() {
     if (!acquireSessionLock()) {
         m_sLoopState.timerEvent = true;
         m_sLoopState.timerCV.notify_all();
-         g_pAuth->terminate();
-         exit(1);
-     }
+        if (g_pAuth)
+            g_pAuth->terminate();
+        exit(1);
+    }
+
+    // Start auth only once the lock is held, so a rejected instance exits
+    // without stranding greetd/PAM/fingerprint threads.
+    g_pAuth = makeUnique<CAuth>();
+    g_pAuth->start();
 
     registerSignalAction(SIGUSR2, handleForceUpdateSignal);
     registerSignalAction(SIGRTMIN, handlePollTerminate);
@@ -367,7 +371,8 @@ void CHyprlock::run() {
 
     pthread_kill(pollThr.native_handle(), SIGRTMIN);
 
-    g_pAuth->terminate();
+    if (g_pAuth)
+        g_pAuth->terminate();
 
     // Wait for threads to exit before destroying globals to prevent
     // use-after-free in timer callbacks referencing g_asyncResourceManager
@@ -587,6 +592,10 @@ void CHyprlock::onKey(uint32_t key, bool down) {
             m_pKeyRepeatTimer.reset();
         }
     }
+
+    // Auth starts after the session lock is acquired; ignore input before that.
+    if (!g_pAuth)
+        return;
 
     if (g_pAuth->checkWaiting()) {
         renderAllOutputs();
@@ -833,7 +842,7 @@ void CHyprlock::onLockFinished() {
         // This does not mean the session gets unlocked! That is ultimately the responsiblity of the compositor.
         m_sLockState.lock->sendUnlockAndDestroy();
     else
-        m_sLockState.lock.reset();
+        m_sLockState.lock->sendDestroy();
 
     m_sLockState.lock = nullptr;
     m_bTerminate      = true;
