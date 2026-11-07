@@ -124,6 +124,11 @@ TEST_F(SessionsTest, EnvironmentForWaylandAndX11) {
     EXPECT_EQ(x, (std::vector<std::string>{"XDG_SESSION_TYPE=x11", "XDG_SESSION_DESKTOP=i3", "DESKTOP_SESSION=i3"}));
 }
 
+TEST_F(SessionsTest, CurrentDesktopUsesColonSeparators) {
+    const auto env = Sessions::environment({.name = "GNOME", .command = "gnome-session", .type = "wayland", .desktopNames = "GNOME;Unity;", .desktopFile = "/x/gnome.desktop"});
+    EXPECT_EQ(env.back(), "XDG_CURRENT_DESKTOP=GNOME:Unity");
+}
+
 TEST_F(SessionsTest, IsExecutableCommand) {
     EXPECT_TRUE(Sessions::isExecutableCommand("sway"));
     EXPECT_TRUE(Sessions::isExecutableCommand("  sway --unsupported-gpu"));

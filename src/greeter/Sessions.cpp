@@ -156,8 +156,15 @@ std::vector<std::string> Sessions::environment(const SGreeterSession& session) {
     auto desktopFilePath = std::filesystem::path(session.desktopFile).filename();
     desktopFilePath.replace_extension("");
     env.emplace_back(std::format("DESKTOP_SESSION={}", desktopFilePath.string()));
-    if (!session.desktopNames.empty())
-        env.emplace_back(std::format("XDG_CURRENT_DESKTOP={}", session.desktopNames));
+    if (!session.desktopNames.empty()) {
+        // DesktopNames is ';'-separated, XDG_CURRENT_DESKTOP is ':'-separated.
+        std::string desktopNamesColon = session.desktopNames;
+        std::ranges::replace(desktopNamesColon, ';', ':');
+
+        if (!desktopNamesColon.empty() && desktopNamesColon.back() == ':')
+            desktopNamesColon.pop_back();
+        env.emplace_back(std::format("XDG_CURRENT_DESKTOP={}", desktopNamesColon));
+    }
 
     return env;
 }
