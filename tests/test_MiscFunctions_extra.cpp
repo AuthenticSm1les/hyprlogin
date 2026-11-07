@@ -112,7 +112,7 @@ TEST(IsExecutableCommandTest, EmptyReturnsFalse) {
 }
 
 TEST(IsExecutableCommandTest, AbsolutePathToBinSh) {
-    EXPECT_TRUE(isExecutableCommand("/usr/bin/bash"));
+    EXPECT_TRUE(isExecutableCommand("/bin/sh"));
 }
 
 TEST(IsExecutableCommandTest, AbsolutePathNonExistent) {
@@ -130,5 +130,5 @@ TEST(IsExecutableCommandTest, NonExistentCommand) {
 
 TEST(IsExecutableCommandTest, WithEnvPrefix) {
     EXPECT_TRUE(isExecutableCommand("FOO=1 ls"));
-    EXPECT_TRUE(isExecutableCommand("BAR=1 BAZ=2 /usr/bin/sh"));
+    EXPECT_TRUE(isExecutableCommand("BAR=1 BAZ=2 /bin/sh"));
 }

@@ -81,7 +81,10 @@
                       extraConfig = "sessions:default_user = alice";
                     };
                     boot.loader.grub.enable = false;
-                    fileSystems."/".device = "none";
+                    fileSystems."/" = {
+                      device = "none";
+                      fsType = "tmpfs";
+                    };
                     system.stateVersion = "26.05";
                   }
                 ];
