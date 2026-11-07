@@ -566,7 +566,11 @@ CGreetd::SResponse CGreetd::roundtrip(const std::string& payload) {
         return {};
 
     Log::logger->debug("roundtrip: request on fd {} payload_bytes={}", m_fd, payload.size());
-    Log::logger->debug("roundtrip: raw request: {}", payload);
+    // post_auth_message_response carries the password: never log its payload.
+    if (payload.find(R"("type":"post_auth_message_response")") != std::string::npos)
+        Log::logger->debug("roundtrip: raw request: {{\"type\":\"post_auth_message_response\",\"response\":\"<redacted>\"}}");
+    else
+        Log::logger->debug("roundtrip: raw request: {}", payload);
 
     const uint32_t payloadLen = payload.size();
     const auto     lenWrite   = write(m_fd, &payloadLen, sizeof(payloadLen));
