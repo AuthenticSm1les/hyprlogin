@@ -67,6 +67,9 @@ class CHyprlock {
 
     bool                             m_lockAquired = false;
     bool                             m_bLocked     = false;
+    // Greeter fix (Debian): remember an unlock requested before the compositor's
+    // `locked` event arrived, so the session doesn't hang after auth.
+    bool                             m_bUnlockQueued = false;
 
     bool                             m_bCapsLock = false;
     bool                             m_bNumLock  = false;
