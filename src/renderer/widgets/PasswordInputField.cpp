@@ -9,7 +9,6 @@
 #include "../../core/AnimationManager.hpp"
 #include "../../helpers/Color.hpp"
 #include <cmath>
-#include <fstream>
 #include <hyprgraphics/resource/resources/TextResource.hpp>
 #include <hyprutils/math/Vector2D.hpp>
 #include <hyprutils/string/String.hpp>
@@ -17,33 +16,6 @@
 #include <hyprlang.hpp>
 
 using namespace Hyprutils::String;
-
-static bool passwordFieldDebugMode() {
-    static const auto DEBUGMODE = g_pConfigManager->getValue<Hyprlang::INT>("general:debug_mode");
-    return *DEBUGMODE != 0;
-}
-
-static std::string passwordFieldDebugLogPath() {
-    static const auto DEBUGLOGPATH = g_pConfigManager->getValue<Hyprlang::STRING>("general:debug_log_path");
-    return std::string{std::string_view{*DEBUGLOGPATH}};
-}
-
-static void logPasswordFieldDebug(const std::string& message) {
-    if (!passwordFieldDebugMode())
-        return;
-
-    Log::logger->log(Log::INFO, "[input-debug] {}", message);
-
-    const auto path = passwordFieldDebugLogPath();
-    if (path.empty())
-        return;
-
-    std::ofstream out(path, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    out << "[input-debug] " << message << '\n';
-}
 
 CPasswordInputField::~CPasswordInputField() {
     reset();
@@ -222,20 +194,6 @@ bool CPasswordInputField::draw(const SRenderData& data) {
     inputHidden    = g_pHyprlock->isInputBufferHidden();
     checkWaiting   = g_pAuth->checkWaiting();
     displayFail    = g_pAuth->m_bDisplayFailText;
-
-    const auto currentPrompt         = g_pHyprlock->getGreeterPrompt();
-    const auto currentTargetUsername = g_pHyprlock->getTargetUsername();
-    if (checkWaiting != lastLoggedCheckWaiting || displayFail != lastLoggedDisplayFail || inputHidden != lastLoggedInputHidden ||
-        passwordLength != lastLoggedPasswordLength || currentPrompt != lastLoggedPrompt || currentTargetUsername != lastLoggedTargetUsername) {
-        logPasswordFieldDebug(std::format("draw state: waiting={} display_fail={} input_hidden={} password_length={} prompt='{}' target_user='{}'", checkWaiting,
-                                          displayFail, inputHidden, passwordLength, currentPrompt, currentTargetUsername));
-        lastLoggedCheckWaiting   = checkWaiting;
-        lastLoggedDisplayFail    = displayFail;
-        lastLoggedInputHidden    = inputHidden;
-        lastLoggedPasswordLength = passwordLength;
-        lastLoggedPrompt         = currentPrompt;
-        lastLoggedTargetUsername = currentTargetUsername;
-    }
 
     updateFade();
     updateDots();
@@ -434,8 +392,6 @@ void CPasswordInputField::updatePlaceholder() {
     }
 
     const std::string newText = formatString(templateText).formatted;
-    logPasswordFieldDebug(std::format("updatePlaceholder: display_fail={} waiting={} input_hidden={} template='{}' rendered='{}'", displayFail, checkWaiting, inputHidden,
-                                      templateText, newText));
 
     // if the text is unchanged we don't need to do anything, unless we are swapping font color
     const auto ALLOWCOLORSWAP = outThick == 0 && colorConfig.swapFont;

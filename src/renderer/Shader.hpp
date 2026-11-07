@@ -70,10 +70,5 @@ class CShader {
     GLint colorizeTint = -1;
     GLint boostA       = -1;
 
-    GLint getUniformLocation(const std::string&);
-
     void  destroy();
-
-  private:
-    std::unordered_map<std::string, GLint> m_muUniforms;
 };

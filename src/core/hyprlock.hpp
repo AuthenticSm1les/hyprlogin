@@ -84,7 +84,6 @@ class CHyprlock {
     SP<CCWlCompositor>               getCompositor();
     SP<CCWpFractionalScaleManagerV1> getFractionalMgr();
     SP<CCWpViewporter>               getViewporter();
-    SP<CCWlShm>                      getShm();
 
     int32_t                          m_iKeebRepeatRate  = 25;
     int32_t                          m_iKeebRepeatDelay = 600;
@@ -122,7 +121,6 @@ class CHyprlock {
         SP<CCWlCompositor>               compositor  = nullptr;
         SP<CCWpFractionalScaleManagerV1> fractional  = nullptr;
         SP<CCWpViewporter>               viewporter  = nullptr;
-        SP<CCWlShm>                      shm         = nullptr;
     } m_sWaylandState;
 
     struct {

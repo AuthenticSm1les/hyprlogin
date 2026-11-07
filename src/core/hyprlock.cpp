@@ -154,17 +154,6 @@ static void registerSignalAction(int sig, void (*handler)(int), int sa_flags = 0
     sigaction(sig, &sa, nullptr);
 }
 
-static void handleForceUpdateSignal(int sig) {
-    if (sig == SIGUSR2) {
-        for (auto& t : g_pHyprlock->getTimers()) {
-            if (t->canForceUpdate()) {
-                t->call(t);
-                t->cancel();
-            }
-        }
-    }
-}
-
 static void handlePollTerminate(int sig) {
     ;
 }
@@ -199,8 +188,6 @@ void CHyprlock::run() {
                 makeShared<CCWpFractionalScaleManagerV1>((wl_proxy*)wl_registry_bind((wl_registry*)r->resource(), name, &wp_fractional_scale_manager_v1_interface, 1));
         else if (IFACE == wp_viewporter_interface.name)
             m_sWaylandState.viewporter = makeShared<CCWpViewporter>((wl_proxy*)wl_registry_bind((wl_registry*)r->resource(), name, &wp_viewporter_interface, 1));
-        else if (IFACE == wl_shm_interface.name)
-            m_sWaylandState.shm = makeShared<CCWlShm>((wl_proxy*)wl_registry_bind((wl_registry*)r->resource(), name, &wl_shm_interface, 1));
         else
             return;
 
@@ -253,7 +240,6 @@ void CHyprlock::run() {
     g_pAuth = makeUnique<CAuth>();
     g_pAuth->start();
 
-    registerSignalAction(SIGUSR2, handleForceUpdateSignal);
     registerSignalAction(SIGRTMIN, handlePollTerminate);
 
     pollfd pollfds[1];
@@ -382,7 +368,6 @@ void CHyprlock::unlock() {
         return;
     }
 
-    Log::logger->log(Log::INFO, "unlock: starting fade-out animation");
     g_pRenderer->startFadeOut(true);
 
     renderAllOutputs();
@@ -754,53 +739,39 @@ bool CHyprlock::acquireSessionLock() {
 }
 
 void CHyprlock::releaseSessionLock() {
-    try {
-        Log::logger->log(Log::INFO, "releaseSessionLock: releasing greeter lock");
+    Log::logger->log(Log::INFO, "Unlocking session");
 
-        if (m_bTerminate) {
-            Log::logger->log(Log::ERR, "releaseSessionLock: already terminated?");
-            return;
-        }
-
-        if (!m_sLockState.lock) {
-            Log::logger->log(Log::ERR, "releaseSessionLock: no lock object!");
-            return;
-        }
-
-        if (!m_bLocked) {
-            // Would be a protocol error to allow this
-            Log::logger->log(Log::ERR, "releaseSessionLock: never received locked event!");
-            return;
-        }
-
-        Log::logger->log(Log::INFO, "releaseSessionLock: calling sendUnlockAndDestroy");
-        m_sLockState.lock->sendUnlockAndDestroy();
-        m_sLockState.lock = nullptr;
-
-        static const auto EXITCOMMAND = g_pConfigManager->getValue<Hyprlang::STRING>("general:exit_command");
-        const std::string exitCommand = *EXITCOMMAND;
-        if (!exitCommand.empty()) {
-            Log::logger->log(Log::INFO, "releaseSessionLock: executing exit_command '{}'", exitCommand);
-            spawnAsync(exitCommand);
-        }
-
-        Log::logger->log(Log::INFO, "releaseSessionLock: greeter finished, setting terminate flag");
-
-        m_bTerminate = true;
-        m_bLocked    = false;
-
-        Log::logger->log(Log::INFO, "releaseSessionLock: calling wl_display_roundtrip");
-        wl_display_roundtrip(m_sWaylandState.display);
-        Log::logger->log(Log::INFO, "releaseSessionLock: roundtrip completed");
-    } catch (const std::exception& e) {
-        Log::logger->log(Log::ERR, "releaseSessionLock: exception caught: {}", e.what());
-        m_bTerminate = true;
-        m_bLocked    = false;
-    } catch (...) {
-        Log::logger->log(Log::ERR, "releaseSessionLock: unknown exception caught");
-        m_bTerminate = true;
-        m_bLocked    = false;
+    if (m_bTerminate) {
+        Log::logger->log(Log::ERR, "Unlock already happend?");
+        return;
     }
+
+    if (!m_sLockState.lock) {
+        Log::logger->log(Log::ERR, "Unlock without a lock object!");
+        return;
+    }
+
+    if (!m_bLocked) {
+        // Would be a protocol error to allow this
+        Log::logger->log(Log::ERR, "Trying to unlock the session, but never recieved the locked event!");
+        return;
+    }
+
+    m_sLockState.lock->sendUnlockAndDestroy();
+    m_sLockState.lock = nullptr;
+
+    static const auto EXITCOMMAND = g_pConfigManager->getValue<Hyprlang::STRING>("general:exit_command");
+    if (const std::string exitCommand = *EXITCOMMAND; !exitCommand.empty()) {
+        Log::logger->log(Log::INFO, "Running exit_command '{}'", exitCommand);
+        spawnAsync(exitCommand);
+    }
+
+    Log::logger->log(Log::INFO, "Unlocked, exiting!");
+
+    m_bTerminate = true;
+    m_bLocked    = false;
+
+    wl_display_roundtrip(m_sWaylandState.display);
 }
 
 void CHyprlock::onLockLocked() {
@@ -1014,6 +985,3 @@ void CHyprlock::enqueueForceUpdateTimers() {
         nullptr, false);
 }
 
-SP<CCWlShm> CHyprlock::getShm() {
-    return m_sWaylandState.shm;
-}
