@@ -169,7 +169,8 @@ Clicking the session label in the example config also switches sessions.
 -c, --config <path>   Use a specific config file
 -v, --verbose         Verbose logging
 -d, --debug           Greeter debug logging (greetd conversation, sessions), implies --verbose
-    --log-file <path> Also write the log to <path> (created with mode 0600)
+    --log-file <path> Also write the log to <path> (created with mode 0600).
+                      With --debug it defaults to /var/cache/hyprlogin/debug.log
 -q, --quiet           Disable logging (with --log-file: log to the file only)
     --no-fade-in      Disable the fade-in animation
     --display <name>  Wayland display to connect to
@@ -237,10 +238,10 @@ The greeter runs as the `greeter` user. Config files and wallpapers must be read
 
    ```toml
    [default_session]
-   command = "env HYPRLOGIN_DEBUG=1 HYPRLOGIN_LOG_FILE=/var/cache/hyprlogin/debug.log start-hyprland -- --config /usr/share/hyprlogin/hyprland-greeter.lua"
+   command = "env HYPRLOGIN_DEBUG=1 start-hyprland -- --config /usr/share/hyprlogin/hyprland-greeter.lua"
    ```
 
-   The log file must be in a directory the greeter user can write to. `/var/cache/hyprlogin` is one.
+   The log goes to `/var/cache/hyprlogin/debug.log`. To use another file, also set `HYPRLOGIN_LOG_FILE=<path>`, in a directory the greeter user can write to.
 
 2. Reboot (or `sudo systemctl restart greetd` from a TTY) and try to log in.
 3. Read the logs:

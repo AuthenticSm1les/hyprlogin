@@ -32,11 +32,12 @@ namespace {
 
 void GreeterLogging::registerArgs(Hyprutils::CLI::CArgumentParser& parser) {
     ASSERT(parser.registerBoolOption("debug", "d", "Enable greeter debug logging, implies --verbose (env: HYPRLOGIN_DEBUG=1)").has_value());
-    ASSERT(parser.registerStringOption("log-file", "", "Also write the log to this file (env: HYPRLOGIN_LOG_FILE)").has_value());
+    ASSERT(parser.registerStringOption("log-file", "", "Also write the log to this file, default with --debug: " HYPRLOGIN_CACHE_DIR "/debug.log (env: HYPRLOGIN_LOG_FILE)").has_value());
 }
 
 void GreeterLogging::setup(Hyprutils::CLI::CArgumentParser& parser) {
-    if (parser.getBool("debug").value_or(false) || envEnabled(DEBUG_ENV))
+    const bool debug = parser.getBool("debug").value_or(false) || envEnabled(DEBUG_ENV);
+    if (debug)
         Log::logger->setDebug();
 
     std::optional<std::string> logFile;
@@ -45,12 +46,17 @@ void GreeterLogging::setup(Hyprutils::CLI::CArgumentParser& parser) {
     else
         logFile = envString(LOG_FILE_ENV);
 
+    const bool isDefault = !logFile && debug;
+    if (isDefault)
+        logFile = DEFAULT_LOG_FILE;
+
     if (!logFile)
         return;
 
     const auto fd = openLogFile(*logFile);
     if (!fd) {
-        Log::logger->log(Log::ERR, "Not writing log file {}: {}", *logFile, fd.error());
+        // The default only works as the greeter user; don't make that an error.
+        Log::logger->log(isDefault ? Log::WARN : Log::ERR, "Not writing log file {}: {}{}", *logFile, fd.error(), isDefault ? " (set --log-file)" : "");
         return;
     }
 
